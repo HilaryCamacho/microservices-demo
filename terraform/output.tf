@@ -21,3 +21,13 @@ output "cluster_name" {
   description = "Name of the cluster"
   value       = resource.google_container_cluster.my_cluster.name
 }
+
+output "artifact_registry_repository" {
+  description = "Artifact Registry repository"
+  value       = google_artifact_registry_repository.online_boutique.name
+}
+
+output "artifact_registry_url" {
+  description = "Docker registry URL"
+  value       = "${var.region}-docker.pkg.dev/${var.gcp_project_id}/${google_artifact_registry_repository.online_boutique.repository_id}"
+}
