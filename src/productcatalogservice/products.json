@@ -1,112 +1,139 @@
 {
     "products": [
-        {
-            "id": "OLJCESPC7Z",
-            "name": "Sunglasses",
-            "description": "Add a modern touch to your outfits with these sleek aviator sunglasses.",
-            "picture": "/static/img/products/sunglasses.jpg",
-            "priceUsd": {
-                "currencyCode": "USD",
-                "units": 19,
-                "nanos": 990000000
-            },
-            "categories": ["accessories"]
-        },
-        {
-            "id": "66VCHSJNUP",
-            "name": "Tank Top",
-            "description": "Perfectly cropped cotton tank, with a scooped neckline.",
-            "picture": "/static/img/products/tank-top.jpg",
-            "priceUsd": {
-                "currencyCode": "USD",
-                "units": 18,
-                "nanos": 990000000
-            },
-            "categories": ["clothing", "tops"]
-        },
-        {
-            "id": "1YMWWN1N4O",
-            "name": "Watch",
-            "description": "This gold-tone stainless steel watch will work with most of your outfits.",
-            "picture": "/static/img/products/watch.jpg",
-            "priceUsd": {
-                "currencyCode": "USD",
-                "units": 109,
-                "nanos": 990000000
-            },
-            "categories": ["accessories"]
-        },
-        {
-            "id": "L9ECAV7KIM",
-            "name": "Loafers",
-            "description": "A neat addition to your summer wardrobe.",
-            "picture": "/static/img/products/loafers.jpg",
-            "priceUsd": {
-                "currencyCode": "USD",
-                "units": 89,
-                "nanos": 990000000
-            },
-            "categories": ["footwear"]
-        },
-        {
-            "id": "2ZYFJ3GM2N",
-            "name": "Hairdryer",
-            "description": "This lightweight hairdryer has 3 heat and speed settings. It's perfect for travel.",
-            "picture": "/static/img/products/hairdryer.jpg",
-            "priceUsd": {
-                "currencyCode": "USD",
-                "units": 24,
-                "nanos": 990000000
-            },
-            "categories": ["hair", "beauty"]
-        },
-        {
-            "id": "0PUK6V6EV0",
-            "name": "Candle Holder",
-            "description": "This small but intricate candle holder is an excellent gift.",
-            "picture": "/static/img/products/candle-holder.jpg",
-            "priceUsd": {
-                "currencyCode": "USD",
-                "units": 18,
-                "nanos": 990000000
-            },
-            "categories": ["decor", "home"]
-        },
-        {
-            "id": "LS4PSXUNUM",
-            "name": "Salt & Pepper Shakers",
-            "description": "Add some flavor to your kitchen.",
-            "picture": "/static/img/products/salt-and-pepper-shakers.jpg",
-            "priceUsd": {
-                "currencyCode": "USD",
-                "units": 18,
-                "nanos": 490000000
-            },
-            "categories": ["kitchen"]
-        },
-        {
-            "id": "9SIQT8TOJO",
-            "name": "Bamboo Glass Jar",
-            "description": "This bamboo glass jar can hold 57 oz (1.7 l) and is perfect for any kitchen.",
-            "picture": "/static/img/products/bamboo-glass-jar.jpg",
-            "priceUsd": {
-                "currencyCode": "USD",
-                "units": 5,
-                "nanos": 490000000
-            },
-            "categories": ["kitchen"]
-        },
-        {
-            "id": "6E92ZMYYFZ",
-            "name": "Mug",
-            "description": "A simple mug with a mustard interior.",
-            "picture": "/static/img/products/mug.jpg",
-            "priceUsd": {
-                "currencyCode": "USD",
-                "units": 8,
-                "nanos": 990000000
-            },
-            "categories": ["kitchen"]
-        }
-    ]
+  {
+    "id": "puppy-chew-toy",
+    "name": "Puppy Chew Toy",
+    "description": "A durable chew toy designed to keep young dogs entertained and support healthy chewing habits.",
+    "picture": "/static/img/products/puppy-chew-toy.jpg",
+    "priceUsd": {
+      "currencyCode": "USD",
+      "units": 12,
+      "nanos": 990000000
+    },
+    "categories": ["toys", "chew-toys"],
+    "petTypes": ["dog"],
+    "petAges": ["puppy"],
+    "petSizes": ["small", "medium"]
+  },
+  {
+    "id": "adult-dog-ball",
+    "name": "Adult Dog Ball",
+    "description": "A durable interactive ball made for adult dogs to play, fetch, and stay active.",
+    "picture": "/static/img/products/adult-dog-ball.jpg",
+    "priceUsd": {
+      "currencyCode": "USD",
+      "units": 15,
+      "nanos": 500000000
+    },
+    "categories": ["toys", "balls"],
+    "petTypes": ["dog"],
+    "petAges": ["adult"],
+    "petSizes": ["medium", "large"]
+  },
+  {
+    "id": "dog-training-treats",
+    "name": "Dog Training Treats",
+    "description": "Small tasty treats perfect for rewarding dogs during training and everyday activities.",
+    "picture": "/static/img/products/dog-training-treats.jpg",
+    "priceUsd": {
+      "currencyCode": "USD",
+      "units": 9,
+      "nanos": 990000000
+    },
+    "categories": ["food", "treats", "training"],
+    "petTypes": ["dog"],
+    "petAges": ["puppy", "adult"],
+    "petSizes": ["small", "medium", "large"]
+  },
+  {
+    "id": "kitten-plush-toy",
+    "name": "Kitten Plush Toy",
+    "description": "A soft plush toy designed for kittens to play with and explore safely.",
+    "picture": "/static/img/products/kitten-plush-toy.jpg",
+    "priceUsd": {
+      "currencyCode": "USD",
+      "units": 8,
+      "nanos": 990000000
+    },
+    "categories": ["toys", "plush"],
+    "petTypes": ["cat"],
+    "petAges": ["kitten"],
+    "petSizes": ["small"]
+  },
+  {
+    "id": "cat-scratching-pad",
+    "name": "Cat Scratching Pad",
+    "description": "A compact scratching pad that helps cats stay active while taking care of their claws.",
+    "picture": "/static/img/products/cat-scratching-pad.jpg",
+    "priceUsd": {
+      "currencyCode": "USD",
+      "units": 18,
+      "nanos": 990000000
+    },
+    "categories": ["accessories", "scratching"],
+    "petTypes": ["cat"],
+    "petAges": ["kitten", "adult"],
+    "petSizes": ["small", "medium"]
+  },
+  {
+    "id": "interactive-cat-ball",
+    "name": "Interactive Cat Ball",
+    "description": "An interactive rolling toy that encourages cats to chase, pounce, and stay active.",
+    "picture": "/static/img/products/interactive-cat-ball.jpg",
+    "priceUsd": {
+      "currencyCode": "USD",
+      "units": 11,
+      "nanos": 490000000
+    },
+    "categories": ["toys", "interactive"],
+    "petTypes": ["cat"],
+    "petAges": ["kitten", "adult"],
+    "petSizes": ["small", "medium"]
+  },
+  {
+    "id": "mouse-exercise-wheel",
+    "name": "Mouse Exercise Wheel",
+    "description": "A quiet exercise wheel designed to help pet mice stay active and healthy.",
+    "picture": "/static/img/products/mouse-exercise-wheel.jpg",
+    "priceUsd": {
+      "currencyCode": "USD",
+      "units": 21,
+      "nanos": 990000000
+    },
+    "categories": ["accessories", "exercise"],
+    "petTypes": ["mouse"],
+    "petAges": ["young", "adult"],
+    "petSizes": ["small"]
+  },
+  {
+    "id": "mouse-treat-mix",
+    "name": "Mouse Treat Mix",
+    "description": "A small treat mix made for pet mice as an occasional addition to their daily diet.",
+    "picture": "/static/img/products/mouse-treat-mix.jpg",
+    "priceUsd": {
+      "currencyCode": "USD",
+      "units": 7,
+      "nanos": 990000000
+    },
+    "categories": ["food", "treats"],
+    "petTypes": ["mouse"],
+    "petAges": ["young", "adult"],
+    "petSizes": ["small"]
+  },
+  {
+    "id": "pet-blanket",
+    "name": "Cozy Pet Blanket",
+    "description": "A soft and comfortable blanket designed for dogs and cats of different ages and sizes.",
+    "picture": "/static/img/products/pet-blanket.jpg",
+    "priceUsd": {
+      "currencyCode": "USD",
+      "units": 24,
+      "nanos": 990000000
+    },
+    "categories": ["accessories", "comfort"],
+    "petTypes": ["dog", "cat"],
+    "petAges": ["puppy", "kitten", "adult", "senior"],
+    "petSizes": ["small", "medium", "large"]
+  }
+]
 }

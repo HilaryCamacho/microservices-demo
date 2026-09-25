@@ -69,6 +69,17 @@ func (fe *frontendServer) homeHandler(w http.ResponseWriter, r *http.Request) {
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve products"), http.StatusInternalServerError)
 		return
 	}
+	petType, petAge, petSize := getPetProfile(r)
+
+	var filteredProducts []*pb.Product
+	for _, product := range products {
+		if productMatchesPetProfile(product, petType, petAge, petSize) {
+			filteredProducts = append(filteredProducts, product)
+		}
+	}
+
+	products = filteredProducts
+
 	cart, err := fe.getCart(r.Context(), sessionID(r))
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve cart"), http.StatusInternalServerError)
@@ -112,6 +123,9 @@ func (fe *frontendServer) homeHandler(w http.ResponseWriter, r *http.Request) {
 		"currencies":    currencies,
 		"products":      ps,
 		"cart_size":     cartSize(cart),
+		"pet_type":      petType,
+		"pet_age":       petAge,
+		"pet_size":      petSize,
 		"banner_color":  os.Getenv("BANNER_COLOR"), // illustrates canary deployments
 		"ad":            fe.chooseAd(r.Context(), []string{}, log),
 	})); err != nil {
@@ -232,7 +246,7 @@ func (fe *frontendServer) addToCartHandler(w http.ResponseWriter, r *http.Reques
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to add to cart"), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("location", baseUrl + "/cart")
+	w.Header().Set("location", baseUrl+"/cart")
 	w.WriteHeader(http.StatusFound)
 }
 
@@ -244,7 +258,7 @@ func (fe *frontendServer) emptyCartHandler(w http.ResponseWriter, r *http.Reques
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to empty cart"), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("location", baseUrl + "/")
+	w.Header().Set("location", baseUrl+"/")
 	w.WriteHeader(http.StatusFound)
 }
 
@@ -423,7 +437,7 @@ func (fe *frontendServer) logoutHandler(w http.ResponseWriter, r *http.Request) 
 		c.MaxAge = -1
 		http.SetCookie(w, c)
 	}
-	w.Header().Set("Location", baseUrl + "/")
+	w.Header().Set("Location", baseUrl+"/")
 	w.WriteHeader(http.StatusFound)
 }
 
@@ -631,5 +645,79 @@ func stringinSlice(slice []string, val string) bool {
 			return true
 		}
 	}
+	return false
+}
+
+func (fe *frontendServer) setPetProfileHandler(w http.ResponseWriter, r *http.Request) {
+	petType := r.FormValue("pet_type")
+	petAge := r.FormValue("pet_age")
+	petSize := r.FormValue("pet_size")
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookiePetType,
+		Value:    petType,
+		MaxAge:   cookieMaxAge,
+		Path:     "/",
+		HttpOnly: true,
+	})
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookiePetAge,
+		Value:    petAge,
+		MaxAge:   cookieMaxAge,
+		Path:     "/",
+		HttpOnly: true,
+	})
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookiePetSize,
+		Value:    petSize,
+		MaxAge:   cookieMaxAge,
+		Path:     "/",
+		HttpOnly: true,
+	})
+
+	http.Redirect(w, r, baseUrl+"/", http.StatusSeeOther)
+}
+
+func getPetProfile(r *http.Request) (string, string, string) {
+	petType := getCookieValue(r, cookiePetType)
+	petAge := getCookieValue(r, cookiePetAge)
+	petSize := getCookieValue(r, cookiePetSize)
+
+	return petType, petAge, petSize
+}
+
+func getCookieValue(r *http.Request, name string) string {
+	cookie, err := r.Cookie(name)
+	if err != nil {
+		return ""
+	}
+	return cookie.Value
+}
+
+func productMatchesPetProfile(product *pb.Product, petType, petAge, petSize string) bool {
+	if petType != "" && !containsString(product.GetPetTypes(), petType) {
+		return false
+	}
+
+	if petAge != "" && !containsString(product.GetPetAges(), petAge) {
+		return false
+	}
+
+	if petSize != "" && !containsString(product.GetPetSizes(), petSize) {
+		return false
+	}
+
+	return true
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+
 	return false
 }
