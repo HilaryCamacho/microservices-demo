@@ -40,6 +40,12 @@ variable "github_repository" {
   default     = "HilaryCamacho/microservices-demo"
 }
 
+variable "github_oidc_subject_prefix" {
+  type        = string
+  description = "Prefijo del claim 'sub' del token OIDC cuando el repositorio usa subjects inmutables (repo:<owner>@<owner_id>/<repo>@<repo_id>). Consultar con: gh api repos/<owner>/<repo>/actions/oidc/customization/sub"
+  default     = ""
+}
+
 variable "create_github_oidc_provider" {
   type        = bool
   description = "Crear el proveedor OIDC de GitHub. Poner en false si ya existe en la cuenta de AWS"
