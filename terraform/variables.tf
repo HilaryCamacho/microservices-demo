@@ -13,7 +13,7 @@ variable "region" {
 variable "kubernetes_version" {
   type        = string
   description = "Versión de Kubernetes del clúster EKS. Usar una versión en soporte estándar (las de soporte extendido cuestan más)"
-  default     = "1.35"
+  default     = "1.36"
 }
 
 variable "vpc_cidr" {

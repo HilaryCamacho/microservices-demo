@@ -32,3 +32,5 @@ gha-creds-*.json
 *.tfstate.*
 *.tfvars.json
 crash.log
+*.tfplan
+tfplan
