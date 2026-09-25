@@ -22,25 +22,141 @@
     {{$.platform_name}}
   </span>
 </div>
+
 <main role="main" class="home">
 
-  <!-- The image at the top of the home page, displayed on smaller screens. -->
   <div class="home-mobile-hero-banner d-lg-none"></div>
 
   <div class="container-fluid">
     <div class="row">
 
-      <!-- The image on the left of the home page, displayed on larger screens. -->
-      <!--<div class="col-4 d-none d-lg-block home-desktop-left-image"></div>-->
-      <!-- @TODO: removed temporarily. When uncommenting, also replace below div with this -->
-      <!--<div class="col-12 col-lg-8">-->
-
       <div class="col-12 col-lg-12 px-10-percent">
 
+        <!-- Pet Profile -->
+        <div class="row px-xl-6 mb-4">
+          <div class="col-12">
+            <div class="card p-4">
+              <h3>🐾 Find products for your pet</h3>
+              <p>Select your pet's profile to see products made for them.</p>
+
+              <form method="POST" action="{{ $.baseUrl }}/setPetProfile">
+                <div class="row">
+
+                  <div class="col-md-4 mb-3">
+                    <label for="pet_type">Pet</label>
+                    <select
+                      class="form-control"
+                      id="pet_type"
+                      name="pet_type"
+                      required
+                      onchange="updatePetOptions()">
+
+                      <option value="">Select pet</option>
+
+                      <option value="dog"
+                        {{ if eq $.pet_type "dog" }}selected{{ end }}>
+                        🐶 Dog
+                      </option>
+
+                      <option value="cat"
+                        {{ if eq $.pet_type "cat" }}selected{{ end }}>
+                        🐱 Cat
+                      </option>
+
+                      <option value="mouse"
+                        {{ if eq $.pet_type "mouse" }}selected{{ end }}>
+                        🐭 Mouse
+                      </option>
+
+                    </select>
+                  </div>
+
+                  <div class="col-md-4 mb-3">
+                    <label for="pet_age">Age</label>
+                    <select
+                      class="form-control"
+                      id="pet_age"
+                      name="pet_age"
+                      required>
+
+                      <option value="">Select age</option>
+
+                      <option value="puppy"
+                        {{ if eq $.pet_age "puppy" }}selected{{ end }}>
+                        Puppy
+                      </option>
+
+                      <option value="kitten"
+                        {{ if eq $.pet_age "kitten" }}selected{{ end }}>
+                        Kitten
+                      </option>
+
+                      <option value="young"
+                        {{ if eq $.pet_age "young" }}selected{{ end }}>
+                        Young
+                      </option>
+
+                      <option value="adult"
+                        {{ if eq $.pet_age "adult" }}selected{{ end }}>
+                        Adult
+                      </option>
+
+                      <option value="senior"
+                        {{ if eq $.pet_age "senior" }}selected{{ end }}>
+                        Senior
+                      </option>
+
+                    </select>
+                  </div>
+
+                  <div class="col-md-4 mb-3">
+                    <label for="pet_size">Size</label>
+                    <select
+                      class="form-control"
+                      id="pet_size"
+                      name="pet_size"
+                      required>
+
+                      <option value="">Select size</option>
+
+                      <option value="small"
+                        {{ if eq $.pet_size "small" }}selected{{ end }}>
+                        Small
+                      </option>
+
+                      <option value="medium"
+                        {{ if eq $.pet_size "medium" }}selected{{ end }}>
+                        Medium
+                      </option>
+
+                      <option value="large"
+                        {{ if eq $.pet_size "large" }}selected{{ end }}>
+                        Large
+                      </option>
+
+                    </select>
+                  </div>
+
+                </div>
+
+                <button type="submit" class="btn btn-primary">
+                  Save Pet Profile
+                </button>
+              </form>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- Products -->
         <div class="row hot-products-row px-xl-6">
 
           <div class="col-12">
-            <h3>Hot Products</h3>
+            {{ if $.pet_type }}
+              <h3>Products for your {{ $.pet_type }}</h3>
+            {{ else }}
+              <h3>Hot Products</h3>
+            {{ end }}
           </div>
 
           {{ range $.products }}
@@ -49,10 +165,19 @@
               <img loading="lazy" src="{{ $.baseUrl }}{{.Item.Picture}}">
               <div class="hot-product-card-img-overlay"></div>
             </a>
+
             <div>
               <div class="hot-product-card-name">{{ .Item.Name }}</div>
-              <div class="hot-product-card-price">{{ renderMoney .Price }}</div>
+              <div class="hot-product-card-price">
+                {{ renderMoney .Price }}
+              </div>
             </div>
+          </div>
+          {{ end }}
+
+          {{ if not $.products }}
+          <div class="col-12">
+            <p>No products match this pet profile.</p>
           </div>
           {{ end }}
 
@@ -72,9 +197,94 @@
 
 </main>
 
-<!-- Footer for smaller screens. -->
 <div class="d-lg-none">
   {{ template "footer" . }}
 </div>
+
+<script>
+function updatePetOptions() {
+  const petType = document.getElementById("pet_type").value;
+  const ageSelect = document.getElementById("pet_age");
+  const sizeSelect = document.getElementById("pet_size");
+
+  const currentAge = ageSelect.value;
+  const currentSize = sizeSelect.value;
+
+  // Clear age options
+  ageSelect.innerHTML = '<option value="">Select age</option>';
+
+  // Clear size options
+  sizeSelect.innerHTML = '<option value="">Select size</option>';
+
+  let ages = [];
+  let sizes = [];
+
+  if (petType === "dog") {
+    ages = [
+      ["puppy", "Puppy"],
+      ["adult", "Adult"],
+      ["senior", "Senior"]
+    ];
+
+    sizes = [
+      ["small", "Small"],
+      ["medium", "Medium"],
+      ["large", "Large"]
+    ];
+  }
+
+  if (petType === "cat") {
+    ages = [
+      ["kitten", "Kitten"],
+      ["adult", "Adult"],
+      ["senior", "Senior"]
+    ];
+
+    sizes = [
+      ["small", "Small"],
+      ["medium", "Medium"]
+    ];
+  }
+
+  if (petType === "mouse") {
+    ages = [
+      ["young", "Young"],
+      ["adult", "Adult"]
+    ];
+
+    sizes = [
+      ["small", "Small"]
+    ];
+  }
+
+  ages.forEach(function(age) {
+    const option = document.createElement("option");
+    option.value = age[0];
+    option.textContent = age[1];
+
+    if (age[0] === currentAge) {
+      option.selected = true;
+    }
+
+    ageSelect.appendChild(option);
+  });
+
+  sizes.forEach(function(size) {
+    const option = document.createElement("option");
+    option.value = size[0];
+    option.textContent = size[1];
+
+    if (size[0] === currentSize) {
+      option.selected = true;
+    }
+
+    sizeSelect.appendChild(option);
+  });
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+  updatePetOptions();
+});
+</script>
 
 {{ end }}

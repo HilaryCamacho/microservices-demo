@@ -1,17 +1,9 @@
-# Copyright 2022 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+name              = "online-boutique"
+region            = "us-east-2"
+github_repository = "HilaryCamacho/microservices-demo"
 
-gcp_project_id = "<project_id_here>"
+# El repositorio usa subjects OIDC inmutables (gh api repos/HilaryCamacho/microservices-demo/actions/oidc/customization/sub)
+github_oidc_subject_prefix = "repo:HilaryCamacho@188712338/microservices-demo@1356741854"
 
-memorystore = false
+# ARNs IAM de otros miembros del equipo que necesiten usar kubectl en el clúster
+cluster_admin_arns = []
