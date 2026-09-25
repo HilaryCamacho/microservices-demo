@@ -24,8 +24,8 @@ variable "vpc_cidr" {
 
 variable "node_instance_type" {
   type        = string
-  description = "Tipo de instancia EC2 para los nodos del clúster"
-  default     = "t3.medium"
+  description = "Tipo de instancia EC2 para los nodos del clúster (las cuentas en el plan gratuito de AWS solo permiten tipos free-tier-eligible)"
+  default     = "m7i-flex.large"
 }
 
 variable "node_desired_size" {
