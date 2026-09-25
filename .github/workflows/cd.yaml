@@ -1,0 +1,89 @@
+# CD: cuando un pull request se mergea a main y el CI termina bien, despliega en EKS
+# las imágenes que el CI subió a ECR (tag = SHA del commit) usando el Helm chart del repo.
+
+name: CD
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+# Nunca dos despliegues a la vez; el siguiente espera a que termine el anterior
+concurrency:
+  group: cd-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
+  ECR_PREFIX: ${{ vars.ECR_PREFIX || 'online-boutique' }}
+  CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'online-boutique' }}
+  NAMESPACE: online-boutique
+  RELEASE: online-boutique
+
+jobs:
+  deploy:
+    name: Deploy a EKS con Helm
+    # Solo despliega si el CI fue exitoso y corrió por un push a main (PR mergeado)
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-24.04
+    environment:
+      name: production
+      url: ${{ steps.url.outputs.url }}
+    env:
+      IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Credenciales AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login a Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v4.0.1
+
+      - name: Conectar kubectl al clúster EKS
+        run: aws eks update-kubeconfig --region "$AWS_REGION" --name "$CLUSTER_NAME"
+
+      - name: helm upgrade --install
+        run: |
+          helm upgrade --install "$RELEASE" ./helm-chart \
+            --namespace "$NAMESPACE" --create-namespace \
+            --set images.repository="${{ steps.ecr.outputs.registry }}/$ECR_PREFIX" \
+            --set images.tag="$IMAGE_TAG" \
+            --rollback-on-failure \
+            --timeout 10m
+
+      - name: Estado de los pods
+        run: |
+          kubectl get pods -n "$NAMESPACE" -o wide
+          helm history "$RELEASE" -n "$NAMESPACE" --max 5
+
+      - name: URL pública del frontend
+        id: url
+        run: |
+          for _ in $(seq 1 30); do
+            HOST=$(kubectl get svc frontend-external -n "$NAMESPACE" \
+                     -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+            [ -n "$HOST" ] && break
+            sleep 10
+          done
+          echo "url=http://$HOST" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Despliegue exitoso 🚀"
+            echo "- Imágenes: \`$ECR_PREFIX/*:$IMAGE_TAG\`"
+            echo "- Frontend: http://$HOST"
+          } >> "$GITHUB_STEP_SUMMARY"

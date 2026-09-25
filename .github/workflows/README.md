@@ -1,51 +1,47 @@
-# GitHub Actions Workflows
+# GitHub Actions — CI/CD
 
-This page describes the CI/CD workflows for the Online Boutique app, which run in [Github Actions](https://github.com/GoogleCloudPlatform/microservices-demo/actions).
+Los pipelines se autentican en AWS mediante **OIDC**: GitHub emite un token temporal y AWS lo intercambia por
+credenciales de corta duración del rol `online-boutique-github-actions`. No hay access keys guardadas en el repositorio.
 
-## Infrastructure
+## Flujo
 
-The CI/CD pipelines for Online Boutique run on standard GitHub-hosted runners (Ubuntu). 
+```
+feature/*  ──PR──▶  develop  ──PR──▶  main
+               │              │          │
+               ▼              ▼          ▼
+          CI (build)     CI (build)   CI (build + push a ECR)
+                                          │
+                                          ▼
+                                   CD (helm upgrade en EKS)
+```
 
-We also host a test GKE cluster, which is where the deploy tests run. Every PR has its own namespace in the cluster.
+## [ci.yaml](ci.yaml) — Integración continua
 
-## Workflows
+Se ejecuta en cada pull request y push a `develop` y `main`.
 
-**Note**: In order for the current CI/CD setup to work on your pull request, you must branch directly off the repo (no forks). This is because the Github secrets necessary for these tests aren't copied over when you fork.
+1. **Validar**: `terraform fmt`, `terraform validate`, `helm lint` y `helm template`.
+2. **Pruebas**: `go build` y `go test` de `frontend` y `productcatalogservice` (servicios del perfil de mascota).
+3. **Build**: construye en paralelo las imágenes Docker de los 11 microservicios.
+   - En pull requests solo se construyen, para verificar que compilan.
+   - En push a `develop`/`main` se suben a Amazon ECR con el tag `<SHA del commit>`.
 
-### Code Tests - [ci-pr.yaml](ci-pr.yaml)
+## [cd.yaml](cd.yaml) — Despliegue continuo
 
-These tests run on every commit for every open PR, as well as any commit to main / any release branch. Currently, this workflow runs only Go unit tests.
+Se ejecuta cuando el CI termina con éxito después de un push a `main`, es decir, cuando se mergea un pull request.
 
+1. Se conecta al clúster EKS.
+2. Ejecuta `helm upgrade --install` con el chart de `helm-chart/`, usando las imágenes del commit que construyó el CI.
+3. Si el despliegue falla, Helm hace rollback automático a la versión anterior (`--rollback-on-failure`).
+4. Publica la URL pública del frontend en el resumen del workflow y en el environment `production`.
 
-### Deploy Tests- [ci-pr.yaml](ci-pr.yaml)
+## Configuración requerida en GitHub
 
-These tests run on every commit for every open PR, as well as any commit to main / any release branch. This workflow:
+En **Settings → Secrets and variables → Actions → Variables**:
 
-1. Creates a dedicated GKE namespace for that PR, if it doesn't already exist, in the PR GKE cluster.
-2. Uses `skaffold run` to build and push the images specific to that PR commit. Then skaffold deploys those images, via `kubernetes-manifests`, to the PR namespace in the test cluster.
-3. Tests to make sure all the pods start up and become ready.
-4. Gets the LoadBalancer IP for the frontend service.
-5. Comments that IP in the pull request, for staging.
+| Variable | Valor |
+|---|---|
+| `AWS_ROLE_ARN` | `terraform output -raw github_actions_role_arn` |
+| `AWS_REGION` | `us-east-2` (opcional, es el valor por defecto) |
+| `EKS_CLUSTER_NAME` | `online-boutique` (opcional, es el valor por defecto) |
 
-### Push and Deploy Latest - [push-deploy](push-deploy.yml)
-
-This is the Continuous Deployment workflow, and it runs on every commit to the main branch. This workflow:
-
-1. Builds the container images for every service, tagging as `latest`.
-2. Pushes those images to Google Container Registry.
-
-Note that this workflow does not update the image tags used in `release/kubernetes-manifests.yaml` - these release manifests are tied to a stable `v0.x.x` release.
-
-### Cleanup - [cleanup.yaml](cleanup.yaml)
-
-This workflow runs when a PR closes, regardless of whether it was merged into main. This workflow deletes the PR-specific GKE namespace in the test cluster.
-
-### Manual Release Builder - [make-release.yaml](make-release.yaml)
-
-This workflow is manually triggered via the `workflow_dispatch` event to automate the release process. When run, it:
-1. Validates the release version format.
-2. Automates the build and push of container images to Google Cloud Build.
-3. Automatically regenerates Kubernetes manifests and Kustomize bases.
-4. Packages and pushes the Helm chart.
-5. Branches and tags the repository.
-6. Opens a new Pull Request targeting `main` with the release checklist.
+> `workflow_run` solo se dispara si `cd.yaml` existe en la rama por defecto (`main`).
