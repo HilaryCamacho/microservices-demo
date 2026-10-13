@@ -1,0 +1,116 @@
+# Paso 7: inicializa Vault (solo la primera vez), lo desprecinta y habilita el motor KV v2 en secret/.
+# Se puede volver a correr: después de un reinicio solo desprecinta.
+# Las llaves de unseal y el root token se guardan SOLO en la máquina de control (.secrets/, fuera de Git).
+- name: Inicializar y desprecintar Vault
+  hosts: vault
+  gather_facts: false
+  tasks:
+    - name: Estado de inicialización y sellado
+      ansible.builtin.uri:
+        url: "{{ vault_local_addr }}/v1/sys/seal-status"
+        ca_path: "{{ vault_ca_cert }}"
+      register: vault_seal
+
+    - name: Directorio local para llaves (0700)
+      ansible.builtin.file:
+        path: "{{ vault_secrets_dir }}"
+        state: directory
+        mode: "0700"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Inicializar Vault (3 llaves, se necesitan 2 para desprecintar)
+      ansible.builtin.uri:
+        url: "{{ vault_local_addr }}/v1/sys/init"
+        ca_path: "{{ vault_ca_cert }}"
+        method: PUT
+        body_format: json
+        body:
+          secret_shares: 3
+          secret_threshold: 2
+      register: vault_init_result
+      when: not vault_seal.json.initialized
+      no_log: true
+
+    - name: Guardar llaves y root token en la máquina de control
+      ansible.builtin.copy:
+        content: "{{ vault_init_result.json | to_nice_json }}"
+        dest: "{{ vault_init_file }}"
+        mode: "0600"
+      delegate_to: localhost
+      when: vault_init_result is not skipped
+      no_log: true
+
+    - name: Verificar que existen las llaves locales
+      ansible.builtin.stat:
+        path: "{{ vault_init_file }}"
+      delegate_to: localhost
+      register: vault_init_stat
+
+    - name: Sin llaves no se puede desprecintar
+      ansible.builtin.assert:
+        that: vault_init_stat.stat.exists
+        fail_msg: >-
+          Vault ya estaba inicializado pero no existe {{ vault_init_file }}.
+          Usa el archivo de quien lo inicializó o recrea el entorno.
+
+    - name: Cargar llaves
+      ansible.builtin.set_fact:
+        vault_init: "{{ lookup('ansible.builtin.file', vault_init_file) | from_json }}"
+      no_log: true
+
+    - name: Desprecintar (unseal) con 2 de las 3 llaves
+      ansible.builtin.uri:
+        url: "{{ vault_local_addr }}/v1/sys/unseal"
+        ca_path: "{{ vault_ca_cert }}"
+        method: PUT
+        body_format: json
+        body:
+          key: "{{ item }}"
+      loop: "{{ vault_init.keys_base64[:2] }}"
+      when: vault_seal.json.sealed
+      changed_when: true
+      no_log: true
+
+    # Tras desprecintar, raft tarda unos segundos en elegir al nodo activo
+    - name: Esperar a que Vault esté activo
+      ansible.builtin.uri:
+        url: "{{ vault_local_addr }}/v1/sys/health"
+        ca_path: "{{ vault_ca_cert }}"
+      register: vault_health
+      retries: 15
+      delay: 2
+      until: vault_health.status == 200
+
+    - name: Motores de secretos habilitados
+      ansible.builtin.uri:
+        url: "{{ vault_local_addr }}/v1/sys/mounts"
+        ca_path: "{{ vault_ca_cert }}"
+        headers:
+          X-Vault-Token: "{{ vault_init.root_token }}"
+      register: vault_mounts
+      no_log: true
+
+    - name: Habilitar motor KV v2 en secret/
+      ansible.builtin.uri:
+        url: "{{ vault_local_addr }}/v1/sys/mounts/secret"
+        ca_path: "{{ vault_ca_cert }}"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_init.root_token }}"
+        body_format: json
+        body:
+          type: kv
+          options:
+            version: "2"
+        status_code: 204
+      when: "'secret/' not in vault_mounts.json.data"
+      changed_when: true
+      no_log: true
+
+    - name: Acceso a la UI
+      ansible.builtin.debug:
+        msg: >-
+          UI: https://{{ ansible_host }}:{{ vault_port }}/ui (método Token, root token en
+          {{ vault_init_file }}). El navegador advertirá del certificado: es de la CA propia
+          ({{ vault_artifacts_dir }}/vault-ca.pem).

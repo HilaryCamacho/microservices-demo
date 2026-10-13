@@ -1,0 +1,15 @@
+vault_port: 8200
+vault_tls_dir: /opt/vault/tls
+vault_ca_cert: "{{ vault_tls_dir }}/ca.crt"
+vault_local_addr: "https://127.0.0.1:{{ vault_port }}"
+
+# En la máquina de control y fuera de Git (.gitignore)
+vault_secrets_dir: "{{ playbook_dir }}/.secrets"
+vault_artifacts_dir: "{{ playbook_dir }}/.artifacts"
+vault_init_file: "{{ vault_secrets_dir }}/vault-init.json"
+
+# Paso 8: ruta de los secretos de la app, política de solo lectura y token del pipeline
+vault_app_secret_path: online-boutique/app
+vault_ci_policy: online-boutique-ci
+vault_ci_token_file: "{{ vault_secrets_dir }}/ci-token"
+vault_ci_token_ttl: 720h

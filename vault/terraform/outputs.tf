@@ -8,6 +8,11 @@ output "vault_addr" {
   value       = "https://${aws_instance.vault.public_ip}:8200"
 }
 
+output "vault_security_group_id" {
+  description = "Security Group de Vault (variable VAULT_SG_ID en GitHub)"
+  value       = aws_security_group.vault.id
+}
+
 output "ssh_command" {
   description = "Comando para entrar a la instancia"
   value       = "ssh ubuntu@${aws_instance.vault.public_ip}"

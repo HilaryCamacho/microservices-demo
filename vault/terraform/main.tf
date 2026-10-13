@@ -67,6 +67,27 @@ resource "aws_vpc_security_group_egress_rule" "web" {
   to_port           = tonumber(each.value)
 }
 
+# Los runners de GitHub no tienen IP fija: el CD agrega una regla temporal con la IP del runner
+# y la quita al terminar. El rol de CI solo puede modificar este Security Group.
+data "aws_iam_policy_document" "ci_vault_access" {
+  statement {
+    sid = "TemporaryRunnerAccess"
+    actions = [
+      "ec2:AuthorizeSecurityGroupIngress",
+      "ec2:RevokeSecurityGroupIngress",
+    ]
+    resources = [aws_security_group.vault.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "ci_vault_access" {
+  count = var.ci_role_name != "" ? 1 : 0
+
+  name   = "vault-runner-access"
+  role   = var.ci_role_name
+  policy = data.aws_iam_policy_document.ci_vault_access.json
+}
+
 resource "aws_key_pair" "vault" {
   key_name   = "${var.name}-key"
   public_key = file(pathexpand(var.ssh_public_key_path))

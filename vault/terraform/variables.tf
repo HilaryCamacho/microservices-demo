@@ -34,6 +34,12 @@ variable "ssh_public_key_path" {
   default     = "~/.ssh/id_ed25519.pub"
 }
 
+variable "ci_role_name" {
+  type        = string
+  description = "Rol IAM de GitHub Actions (stack terraform/). Si se indica, puede abrir 8200 a la IP del runner durante el CD. Vacío = sin acceso del pipeline"
+  default     = ""
+}
+
 variable "admin_cidrs" {
   type        = list(string)
   description = "IPs (/32) de las administradoras con acceso a Vault (8200) y SSH (22). Se pasa al ejecutar, no se guarda en Git"

@@ -79,10 +79,20 @@ spec:
         env:
         {{- if eq .Values.cartDatabase.type "spanner" }}
         - name: SPANNER_CONNECTION_STRING
+          value: {{ .Values.cartDatabase.connectionString | quote }}
+        {{- else if .Values.cartDatabase.redisPassword }}
+        # La contraseña viene de Vault (CD) y se guarda en un Secret; Kubernetes la sustituye en $(REDIS_PASSWORD)
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.cartDatabase.inClusterRedis.name }}-auth
+              key: password
+        - name: REDIS_ADDR
+          value: "{{ .Values.cartDatabase.connectionString }},password=$(REDIS_PASSWORD)"
         {{- else }}
         - name: REDIS_ADDR
-        {{- end }}
           value: {{ .Values.cartDatabase.connectionString | quote }}
+        {{- end }}
         resources:
           {{- toYaml .Values.cartService.resources | nindent 10 }}
         readinessProbe:
@@ -197,6 +207,17 @@ spec:
 {{- end }}
 
 {{- if .Values.cartDatabase.inClusterRedis.create }}
+{{- if .Values.cartDatabase.redisPassword }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Values.cartDatabase.inClusterRedis.name }}-auth
+  namespace: {{ .Release.Namespace }}
+type: Opaque
+stringData:
+  password: {{ .Values.cartDatabase.redisPassword | quote }}
+{{- end }}
 ---
 {{- if .Values.serviceAccounts.create }}
 apiVersion: v1
@@ -255,6 +276,15 @@ spec:
         image: redis:alpine@sha256:8096655e437712b07503796fb64d81359256cfcff0ab29d95a7da72863786efb
         {{- else }}
         image: {{ .Values.images.repository }}/redis:alpine
+        {{- end }}
+        {{- if .Values.cartDatabase.redisPassword }}
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.cartDatabase.inClusterRedis.name }}-auth
+              key: password
+        args: ["--requirepass", "$(REDIS_PASSWORD)"]
         {{- end }}
         ports:
         - containerPort: 6379

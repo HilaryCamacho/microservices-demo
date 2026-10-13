@@ -1,0 +1,70 @@
+# CA propia + certificado del servidor con la IP pública, para que los tokens no viajen en texto plano.
+# El pipeline confía en esta CA (variable VAULT_CACERT de GitHub).
+
+- name: Directorio de certificados
+  ansible.builtin.file:
+    path: "{{ vault_tls_dir }}"
+    state: directory
+    owner: vault
+    group: vault
+    mode: "0750"
+
+- name: Llave privada de la CA
+  community.crypto.openssl_privatekey:
+    path: "{{ vault_tls_dir }}/ca.key"
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: CSR de la CA
+  community.crypto.openssl_csr_pipe:
+    privatekey_path: "{{ vault_tls_dir }}/ca.key"
+    common_name: Online Boutique Vault CA
+    use_common_name_for_san: false
+    basic_constraints: ["CA:TRUE"]
+    basic_constraints_critical: true
+    key_usage: [keyCertSign, cRLSign]
+    key_usage_critical: true
+  register: vault_ca_csr
+  changed_when: false
+
+- name: Certificado autofirmado de la CA
+  community.crypto.x509_certificate:
+    path: "{{ vault_ca_cert }}"
+    csr_content: "{{ vault_ca_csr.csr }}"
+    privatekey_path: "{{ vault_tls_dir }}/ca.key"
+    provider: selfsigned
+    selfsigned_not_after: "+3650d"
+    mode: "0644"
+
+- name: Llave privada del servidor
+  community.crypto.openssl_privatekey:
+    path: "{{ vault_tls_dir }}/vault.key"
+    owner: vault
+    group: vault
+    mode: "0600"
+
+- name: CSR del servidor
+  community.crypto.openssl_csr_pipe:
+    privatekey_path: "{{ vault_tls_dir }}/vault.key"
+    common_name: vault
+    subject_alt_name:
+      - "IP:{{ vault_public_ip }}"
+      - IP:127.0.0.1
+      - DNS:localhost
+    extended_key_usage: [serverAuth]
+  register: vault_server_csr
+  changed_when: false
+
+- name: Certificado del servidor firmado por la CA
+  community.crypto.x509_certificate:
+    path: "{{ vault_tls_dir }}/vault.crt"
+    csr_content: "{{ vault_server_csr.csr }}"
+    provider: ownca
+    ownca_path: "{{ vault_ca_cert }}"
+    ownca_privatekey_path: "{{ vault_tls_dir }}/ca.key"
+    ownca_not_after: "+365d"
+    owner: vault
+    group: vault
+    mode: "0644"
+  notify: Reiniciar Vault
