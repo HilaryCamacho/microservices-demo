@@ -1,79 +1,110 @@
 # HashiCorp Vault (Fase III)
 
-Servidor de Vault en una instancia EC2 **fuera del clúster de EKS**, para centralizar los secretos
-que hoy están en duro y que GitHub Actions los consuma con `hashicorp/vault-action`.
+Servidor de Vault en una instancia EC2 **fuera del clúster de EKS**. Centraliza los secretos de la aplicación
+y GitHub Actions los consume con `hashicorp/vault-action` al desplegar.
 
-| Semana | Pasos | Carpeta | Estado |
-|---|---|---|---|
-| 1. Diseño e infraestructura | 1. EC2 · 2. Security Group 8200 · 3. Flujo de secretos · 4. Topología | `terraform/` | Terraform listo, sin aplicar |
-| 2. Aprovisionamiento automatizado | 4. Roles de Ansible · 5. Instalar Vault (`ui = true`) · 6. Prueba de fuego | `ansible/` | Pendiente |
-| 3. Configuración y conexión CI/CD | 7. Init, unseal, KV · 8. Política ACL de solo lectura · 9. `vault-action` | `ansible/` + `.github/workflows/` | Pendiente |
+| Semana | Paso | Dónde |
+|---|---|---|
+| 1. Diseño e infraestructura | 1. EC2 fuera del clúster | `terraform/main.tf` |
+| | 2. Security Group: acceso web por 8200 | `terraform/main.tf` |
+| | 3. Flujo de secretos | [Flujo de secretos](#flujo-de-secretos) |
+| | 4. Topología | [Topología](#topología) |
+| 2. Aprovisionamiento automatizado | 4. Repositorio Ansible modular | `ansible/` (roles `common` y `vault`) |
+| | 5. Instalar Vault, `vault.hcl` con `ui = true` y listener | `ansible/roles/vault/` |
+| | 6. Prueba de fuego (idempotencia) | `scripts/prueba-de-fuego.sh` |
+| 3. Configuración y conexión CI/CD | 7. Init, unseal, motor KV y UI | `ansible/init.yml` |
+| | 8. Política ACL de solo lectura y token único | `policies/online-boutique-ci.hcl`, `ansible/configure.yml` |
+| | 9. GitHub Actions con `vault-action` | `.github/workflows/cd.yaml` |
 
 ## Topología
 
 ```
- Administradoras (IP /32)                 GitHub Actions
-        │  22 (SSH, Ansible)                    │  8200 (semana 3)
-        │  8200 (UI/API)                        │
-        ▼                                       ▼
-┌──────────────── VPC online-boutique-vault-vpc · 10.50.0.0/16 ───────────────┐
-│  Subred pública 10.50.0.0/24 (1 AZ, sin NAT)                                │
-│   ┌───────────────────────────────┐                                         │
-│   │ EC2 Ubuntu 24.04 · t3.small    │  SG: entrada 22 y 8200 solo admin_cidrs │
-│   │ Vault (UI + API en :8200)      │      salida 80/443 para paquetes        │
-│   │ Disco gp3 20 GB cifrado, IMDSv2│                                         │
-│   └───────────────────────────────┘                                         │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-┌──────────────── VPC de EKS (terraform/) ─────────────────┐
-│  Clúster online-boutique · 11 microservicios              │   Separadas: Vault se puede
-└───────────────────────────────────────────────────────────┘   destruir sin tocar el clúster
+ Administradoras (IP /32)               GitHub Actions (runner del CD)
+     │ 22 SSH (Ansible)                      │ 8200, solo la IP del runner y solo durante el job
+     │ 8200 UI/API (HTTPS)                   │ (el CD agrega la regla y la quita al terminar)
+     ▼                                       ▼
+┌────────────── VPC online-boutique-vault-vpc · 10.50.0.0/16 ──────────────┐
+│  Subred pública 10.50.0.0/24 (1 AZ, sin NAT)                             │
+│   ┌──────────────────────────────────┐                                   │
+│   │ EC2 Ubuntu 24.04 · t3.small       │ SG entrada: 22 y 8200 desde        │
+│   │ Vault · UI + API en :8200 (TLS)   │   admin_cidrs                      │
+│   │ Storage raft · KV v2 en secret/   │ SG salida: 80/443 (paquetes)       │
+│   │ Disco gp3 cifrado · IMDSv2        │                                   │
+│   └──────────────────────────────────┘                                   │
+└──────────────────────────────────────────────────────────────────────────┘
+                     │ el CD lee secret/online-boutique/app
+                     ▼
+┌────────────── VPC de EKS (terraform/) ─────────────┐
+│ helm --set-string cartDatabase.redisPassword=…     │
+│ Secret redis-cart-auth → redis (--requirepass)     │
+│                        → cartservice (REDIS_ADDR)  │
+└────────────────────────────────────────────────────┘
 ```
 
 Decisiones:
 
-- **VPC propia y estado de Terraform propio:** la prueba de fuego (paso 6) destruye y recrea Vault
-  sin afectar a EKS. La VPC no lleva NAT Gateway, así que no genera ese costo.
-- **Security Group cerrado:** la entrada solo permite 8200 y 22 desde las IPs de las administradoras.
-  `admin_cidrs` rechaza `0.0.0.0/0` y no se guarda en Git. El puerto 22 es necesario para Ansible.
-- **Salida limitada a 80/443**, lo justo para instalar paquetes.
-- **Disco cifrado e IMDSv2 obligatorio.**
-- **Acceso de GitHub Actions (semana 3):** los runners de GitHub no tienen IP fija. Por definir:
-  abrir 8200 temporalmente a la IP del runner durante el job, o usar un runner propio.
-- **TLS (semana 2):** Vault se configurará con certificado (autofirmado) para que los tokens
-  no viajen en texto plano.
+- **VPC y estado de Terraform propios:** la prueba de fuego destruye y recrea Vault sin tocar EKS.
+  Sin NAT Gateway, así que no genera ese costo.
+- **Security Group cerrado:** entrada solo a 8200 y 22 desde `admin_cidrs`. La variable rechaza `0.0.0.0/0`
+  y no se guarda en Git. Salida solo a 80/443.
+- **TLS con CA propia:** Ansible genera una CA y un certificado con la IP pública. El pipeline confía
+  en esa CA (`VAULT_CACERT`), así que el token no viaja en texto plano.
+- **Acceso del pipeline:** los runners de GitHub no tienen IP fija. El CD abre 8200 solo a la IP del runner
+  y la cierra al terminar (`if: always()`). El rol de CI solo puede modificar este Security Group.
+- **Llaves de unseal y root token:** 3 llaves con umbral de 2. Se guardan solo en la máquina de control
+  (`ansible/.secrets/`, en `.gitignore`).
+
+## Flujo de secretos
+
+Análisis de valores en duro en el repositorio (paso 3):
+
+| Hallazgo | Riesgo | Decisión |
+|---|---|---|
+| Redis del carrito **sin contraseña**; conexión fija `redis-cart:6379` en `helm-chart/values.yaml` | Cualquier pod del clúster puede leer o borrar carritos | **Migra a Vault:** `secret/online-boutique/app` → `redis_password`. La genera Ansible y la inyecta el CD |
+| Acceso de GitHub Actions a AWS | — | Ya usa **OIDC**, sin llaves que migrar |
+| `AWS_ROLE_ARN`, región y nombre del clúster (GitHub Variables) | Identificadores, no secretos | Se quedan en GitHub Variables |
+| Token de Vault del pipeline | "Secret zero" para entrar a Vault | GitHub Secret `VAULT_TOKEN`, con solo lectura y TTL de 30 días. Mejora futura: auth JWT/OIDC de GitHub en Vault, sin token |
+| AlloyDB/Spanner (Secret Manager de GCP) en `cartservice` y `shoppingassistantservice` | Código no usado en este despliegue | Fuera de alcance |
+
+Flujo: **Ansible** genera la contraseña → **Vault** (`secret/online-boutique/app`) → **CD** la lee con el token
+de solo lectura → **Helm** crea el Secret `redis-cart-auth` → Redis exige contraseña y `cartservice` se conecta con ella.
 
 ## Uso
 
-Requisitos: sesión de AWS activa (`aws login --region us-east-2`) y una llave SSH en `~/.ssh/id_ed25519.pub`
-(otra ruta con `-var ssh_public_key_path=...`).
+Requisitos: `aws login --region us-east-2`, `brew install ansible`, llave SSH en `~/.ssh/id_ed25519.pub`
+y el stack de EKS (`terraform/`) aplicado antes, porque crea el rol de GitHub Actions.
 
 ```bash
-cd vault/terraform
-terraform init
-
+# 1-2. Infraestructura
+cd vault/terraform && terraform init
 MY_IP="$(curl -s https://checkip.amazonaws.com)/32"
-terraform plan  -var="admin_cidrs=[\"$MY_IP\"]" -out=tfplan
-terraform apply tfplan
-
-terraform output                     # IP, URL de Vault, comando SSH
+terraform apply -var="admin_cidrs=[\"$MY_IP\"]" -var="ci_role_name=online-boutique-github-actions"
 terraform output -raw ansible_inventory > ../ansible/inventory.ini
+
+# 4-5. Instalar Vault
+cd ../ansible
+ansible-galaxy collection install -r requirements.yml
+ansible-playbook site.yml
+
+# 6. Prueba de fuego: destruye, recrea y verifica idempotencia
+CI_ROLE_NAME=online-boutique-github-actions ../scripts/prueba-de-fuego.sh
+
+# 7. Init, unseal, KV (también desprecinta después de un reinicio)
+ansible-playbook init.yml
+
+# 8. Política, secreto y token del pipeline
+ansible-playbook configure.yml
+
+# 9. Conectar GitHub Actions
+gh secret set VAULT_TOKEN < .secrets/ci-token
+gh variable set VAULT_ADDR --body "$(terraform -chdir=../terraform output -raw vault_addr)"
+gh variable set VAULT_SG_ID --body "$(terraform -chdir=../terraform output -raw vault_security_group_id)"
+gh variable set VAULT_CACERT --body "$(base64 -i .artifacts/vault-ca.pem)"
 ```
 
-Para dar acceso a varias personas: `-var='admin_cidrs=["<ip-1>/32","<ip-2>/32"]'`.
+Después, el CD lee el secreto en cada despliegue a `main`. Sin `VAULT_ADDR`, despliega como antes, sin Vault.
 
-Destruir al terminar (usa las mismas variables):
-
-```bash
-terraform destroy -var="admin_cidrs=[\"$MY_IP\"]"
-```
+Destruir al terminar: `terraform destroy` con las mismas variables y `gh variable delete VAULT_ADDR`
+para que el CD no intente conectarse a un Vault que ya no existe.
 
 Costo aproximado: USD 0.03 por hora (t3.small, IP pública y 20 GB gp3).
-
-Si `t3.small` no es elegible en el plan gratuito, consulta los tipos permitidos y usa `-var instance_type=...`:
-
-```bash
-aws ec2 describe-instance-types --region us-east-2 \
-  --filters Name=free-tier-eligible,Values=true \
-  --query 'InstanceTypes[].InstanceType' --output text
-```
