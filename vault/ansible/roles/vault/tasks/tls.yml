@@ -1,13 +1,14 @@
 # CA propia + certificado del servidor con la IP pública, para que los tokens no viajen en texto plano.
 # El pipeline confía en esta CA (variable VAULT_CACERT de GitHub).
 
+# 0755: los playbooks sin root deben leer ca.crt (público). Las llaves privadas tienen su propio 0600.
 - name: Directorio de certificados
   ansible.builtin.file:
     path: "{{ vault_tls_dir }}"
     state: directory
     owner: vault
     group: vault
-    mode: "0750"
+    mode: "0755"
 
 - name: Llave privada de la CA
   community.crypto.openssl_privatekey:

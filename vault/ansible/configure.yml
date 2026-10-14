@@ -68,9 +68,10 @@
       delegate_to: localhost
       register: vault_ci_token_stat
 
+    # Se prueba leyendo el secreto: el token no tiene la política default, así que no puede usar lookup-self
     - name: ¿Sigue siendo válido?
       ansible.builtin.uri:
-        url: "{{ vault_local_addr }}/v1/auth/token/lookup-self"
+        url: "{{ vault_local_addr }}/v1/secret/data/{{ vault_app_secret_path }}"
         ca_path: "{{ vault_ca_cert }}"
         headers:
           X-Vault-Token: "{{ lookup('ansible.builtin.file', vault_ci_token_file) }}"
@@ -96,6 +97,7 @@
           renewable: true
       register: vault_ci_token_new
       when: not vault_ci_token_stat.stat.exists or vault_ci_token_lookup.status == 403
+      changed_when: true
       no_log: true
 
     - name: Guardar el token en la máquina de control

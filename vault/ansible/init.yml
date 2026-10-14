@@ -30,6 +30,7 @@
           secret_threshold: 2
       register: vault_init_result
       when: not vault_seal.json.initialized
+      changed_when: true
       no_log: true
 
     - name: Guardar llaves y root token en la máquina de control
