@@ -1,0 +1,3 @@
+vault_public_ip: "{{ ansible_host | default(inventory_hostname) }}"
+vault_data_dir: /opt/vault/data
+vault_config_dir: /etc/vault.d

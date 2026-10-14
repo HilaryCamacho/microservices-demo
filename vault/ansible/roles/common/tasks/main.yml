@@ -1,0 +1,11 @@
+- name: Instalar dependencias base
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - jq
+      - python3-cryptography # requerido por community.crypto para generar los certificados
+    state: present
+    update_cache: true
+    cache_valid_time: 3600

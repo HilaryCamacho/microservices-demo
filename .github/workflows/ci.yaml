@@ -28,12 +28,17 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
 
       - name: terraform fmt
-        run: terraform -chdir=terraform fmt -check -recursive
+        run: |
+          for dir in terraform vault/terraform; do
+            terraform -chdir="$dir" fmt -check -recursive
+          done
 
       - name: terraform validate
         run: |
-          terraform -chdir=terraform init -backend=false -input=false
-          terraform -chdir=terraform validate
+          for dir in terraform vault/terraform; do
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+          done
 
       - uses: azure/setup-helm@v4
         with:
@@ -43,7 +48,18 @@ jobs:
         run: helm lint helm-chart --set images.tag=ci
 
       - name: helm template
-        run: helm template online-boutique helm-chart --set images.tag=ci > /dev/null
+        run: |
+          helm template online-boutique helm-chart --set images.tag=ci > /dev/null
+          # Con contraseña de Redis (como la pasa el CD desde Vault)
+          helm template online-boutique helm-chart --set images.tag=ci --set-string cartDatabase.redisPassword=ci > /dev/null
+
+      - name: ansible syntax-check
+        working-directory: vault/ansible
+        run: |
+          pipx install ansible-core
+          ansible-galaxy collection install -r requirements.yml
+          printf '[vault]\n127.0.0.1\n' > /tmp/inventory.ini
+          ansible-playbook -i /tmp/inventory.ini --syntax-check site.yml init.yml configure.yml
 
   test:
     name: Pruebas ${{ matrix.service }}

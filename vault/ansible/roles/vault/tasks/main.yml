@@ -1,0 +1,62 @@
+- name: Repositorio APT oficial de HashiCorp
+  ansible.builtin.deb822_repository:
+    name: hashicorp
+    types: deb
+    uris: https://apt.releases.hashicorp.com
+    suites: "{{ ansible_facts['distribution_release'] }}"
+    components: main
+    architectures: amd64
+    signed_by: https://apt.releases.hashicorp.com/gpg
+  register: hashicorp_repo
+
+- name: Instalar Vault
+  ansible.builtin.apt:
+    name: vault
+    state: present
+    update_cache: "{{ hashicorp_repo is changed }}"
+
+- name: Certificados TLS
+  ansible.builtin.import_tasks: tls.yml
+
+- name: Directorio de datos (almacenamiento raft)
+  ansible.builtin.file:
+    path: "{{ vault_data_dir }}"
+    state: directory
+    owner: vault
+    group: vault
+    mode: "0750"
+
+- name: Configuración vault.hcl (UI habilitada y listener TLS)
+  ansible.builtin.template:
+    src: vault.hcl.j2
+    dest: "{{ vault_config_dir }}/vault.hcl"
+    owner: vault
+    group: vault
+    mode: "0640"
+  notify: Reiniciar Vault
+
+- name: Servicio de Vault habilitado y en ejecución
+  ansible.builtin.systemd_service:
+    name: vault
+    enabled: true
+    state: started
+
+- name: Aplicar reinicio pendiente
+  ansible.builtin.meta: flush_handlers
+
+# 501 = sin inicializar, 503 = sellado: ambos indican que la API ya responde
+- name: Esperar a que la API de Vault responda
+  ansible.builtin.uri:
+    url: "{{ vault_local_addr }}/v1/sys/health"
+    ca_path: "{{ vault_ca_cert }}"
+    status_code: [200, 429, 472, 473, 501, 503]
+  register: vault_health
+  retries: 10
+  delay: 3
+  until: vault_health is succeeded
+
+- name: Copiar el certificado de la CA a la máquina de control
+  ansible.builtin.fetch:
+    src: "{{ vault_ca_cert }}"
+    dest: "{{ vault_artifacts_dir }}/vault-ca.pem"
+    flat: true

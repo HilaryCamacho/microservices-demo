@@ -1,0 +1,24 @@
+terraform {
+  required_version = ">= 1.6"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.0"
+    }
+  }
+
+  # Estado local (excluido en .gitignore), igual que el stack de EKS en terraform/.
+}
+
+provider "aws" {
+  region = var.region
+
+  default_tags {
+    tags = {
+      Project   = var.name
+      ManagedBy = "terraform"
+      Course    = "devops-tecmilenio"
+    }
+  }
+}

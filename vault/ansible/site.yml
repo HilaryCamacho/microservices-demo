@@ -1,0 +1,7 @@
+# Pasos 4 y 5: instala dependencias y Vault con la UI habilitada. Idempotente: una segunda corrida no cambia nada.
+- name: Aprovisionar servidor de Vault
+  hosts: vault
+  become: true
+  roles:
+    - common
+    - vault
