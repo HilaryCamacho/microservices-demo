@@ -1,0 +1,140 @@
+# Paso 8: política ACL de mínimo privilegio, secreto de la app y token único para GitHub Actions.
+# Idempotente: solo crea lo que falta. Requiere haber corrido init.yml.
+- name: Configurar política, secretos y token del pipeline
+  hosts: vault
+  gather_facts: false
+  vars:
+    vault_policy_text: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../policies/' ~ vault_ci_policy ~ '.hcl') }}"
+  tasks:
+    - name: Cargar root token
+      ansible.builtin.set_fact:
+        vault_root_token: "{{ (lookup('ansible.builtin.file', vault_init_file) | from_json).root_token }}"
+      no_log: true
+
+    - name: Política actual
+      ansible.builtin.uri:
+        url: "{{ vault_local_addr }}/v1/sys/policies/acl/{{ vault_ci_policy }}"
+        ca_path: "{{ vault_ca_cert }}"
+        headers:
+          X-Vault-Token: "{{ vault_root_token }}"
+        status_code: [200, 404]
+      register: vault_policy_current
+      no_log: true
+
+    - name: Política ACL de solo lectura ({{ vault_ci_policy }})
+      ansible.builtin.uri:
+        url: "{{ vault_local_addr }}/v1/sys/policies/acl/{{ vault_ci_policy }}"
+        ca_path: "{{ vault_ca_cert }}"
+        method: PUT
+        headers:
+          X-Vault-Token: "{{ vault_root_token }}"
+        body_format: json
+        body:
+          policy: "{{ vault_policy_text }}"
+        status_code: 204
+      when: vault_policy_current.status == 404 or vault_policy_current.json.data.policy != vault_policy_text
+      changed_when: true
+      no_log: true
+
+    - name: ¿Existe el secreto de la app?
+      ansible.builtin.uri:
+        url: "{{ vault_local_addr }}/v1/secret/data/{{ vault_app_secret_path }}"
+        ca_path: "{{ vault_ca_cert }}"
+        headers:
+          X-Vault-Token: "{{ vault_root_token }}"
+        status_code: [200, 404]
+      register: vault_app_secret
+      no_log: true
+
+    # Antes Redis no tenía contraseña (estaba en duro en values.yaml). Se genera aquí y solo vive en Vault.
+    - name: Generar la contraseña de Redis (solo si no existe)
+      ansible.builtin.uri:
+        url: "{{ vault_local_addr }}/v1/secret/data/{{ vault_app_secret_path }}"
+        ca_path: "{{ vault_ca_cert }}"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_root_token }}"
+        body_format: json
+        body:
+          data:
+            redis_password: "{{ lookup('ansible.builtin.password', '/dev/null', chars=['ascii_letters', 'digits'], length=32) }}"
+      when: vault_app_secret.status == 404
+      changed_when: true
+      no_log: true
+
+    - name: ¿Hay un token del pipeline guardado?
+      ansible.builtin.stat:
+        path: "{{ vault_ci_token_file }}"
+      delegate_to: localhost
+      register: vault_ci_token_stat
+
+    # Se prueba leyendo el secreto: el token no tiene la política default, así que no puede usar lookup-self
+    - name: ¿Sigue siendo válido?
+      ansible.builtin.uri:
+        url: "{{ vault_local_addr }}/v1/secret/data/{{ vault_app_secret_path }}"
+        ca_path: "{{ vault_ca_cert }}"
+        headers:
+          X-Vault-Token: "{{ lookup('ansible.builtin.file', vault_ci_token_file) }}"
+        status_code: [200, 403]
+      register: vault_ci_token_lookup
+      when: vault_ci_token_stat.stat.exists
+      no_log: true
+
+    # Huérfano: no depende del root token, así que sigue vivo si después se revoca el root
+    - name: Crear token único para GitHub Actions
+      ansible.builtin.uri:
+        url: "{{ vault_local_addr }}/v1/auth/token/create-orphan"
+        ca_path: "{{ vault_ca_cert }}"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_root_token }}"
+        body_format: json
+        body:
+          policies: ["{{ vault_ci_policy }}"]
+          no_default_policy: true
+          display_name: github-actions
+          ttl: "{{ vault_ci_token_ttl }}"
+          renewable: true
+      register: vault_ci_token_new
+      when: not vault_ci_token_stat.stat.exists or vault_ci_token_lookup.status == 403
+      changed_when: true
+      no_log: true
+
+    - name: Guardar el token en la máquina de control
+      ansible.builtin.copy:
+        content: "{{ vault_ci_token_new.json.auth.client_token }}"
+        dest: "{{ vault_ci_token_file }}"
+        mode: "0600"
+      delegate_to: localhost
+      when: vault_ci_token_new is not skipped
+      no_log: true
+
+    # Evidencia del mínimo privilegio: el token del pipeline lee, pero no puede escribir
+    - name: Comprobar que el token del pipeline puede leer
+      ansible.builtin.uri:
+        url: "{{ vault_local_addr }}/v1/secret/data/{{ vault_app_secret_path }}"
+        ca_path: "{{ vault_ca_cert }}"
+        headers:
+          X-Vault-Token: "{{ lookup('ansible.builtin.file', vault_ci_token_file) }}"
+        status_code: 200
+      no_log: true
+
+    - name: Comprobar que el token del pipeline NO puede escribir
+      ansible.builtin.uri:
+        url: "{{ vault_local_addr }}/v1/secret/data/{{ vault_app_secret_path }}"
+        ca_path: "{{ vault_ca_cert }}"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ lookup('ansible.builtin.file', vault_ci_token_file) }}"
+        body_format: json
+        body:
+          data:
+            prueba: "no-autorizado"
+        status_code: 403
+      no_log: true
+
+    - name: Siguiente paso
+      ansible.builtin.debug:
+        msg: >-
+          Política y token listos (lectura 200, escritura 403). Sube el token a GitHub con:
+          gh secret set VAULT_TOKEN < {{ vault_ci_token_file }}

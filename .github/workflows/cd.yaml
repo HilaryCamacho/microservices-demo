@@ -51,6 +51,39 @@ jobs:
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      # Vault (Fase III). Si la variable VAULT_ADDR no existe, se despliega sin secretos de Vault.
+      # Los runners de GitHub no tienen IP fija: se abre 8200 solo a la IP de este runner y se cierra al terminar.
+      - name: Abrir Vault a la IP del runner
+        id: vault_open
+        if: vars.VAULT_ADDR != ''
+        env:
+          VAULT_SG_ID: ${{ vars.VAULT_SG_ID }}
+        run: |
+          RUNNER_IP="$(curl -fsS https://checkip.amazonaws.com)"
+          echo "cidr=$RUNNER_IP/32" >> "$GITHUB_OUTPUT"
+          aws ec2 authorize-security-group-ingress --group-id "$VAULT_SG_ID" \
+            --ip-permissions "IpProtocol=tcp,FromPort=8200,ToPort=8200,IpRanges=[{CidrIp=$RUNNER_IP/32,Description=github-actions-${{ github.run_id }}}]"
+
+      - name: Leer secretos de Vault
+        if: vars.VAULT_ADDR != ''
+        uses: hashicorp/vault-action@v3
+        with:
+          url: ${{ vars.VAULT_ADDR }}
+          method: token
+          token: ${{ secrets.VAULT_TOKEN }}
+          caCertificate: ${{ vars.VAULT_CACERT }}
+          secrets: |
+            secret/data/online-boutique/app redis_password | REDIS_PASSWORD
+
+      - name: Cerrar Vault a la IP del runner
+        if: always() && steps.vault_open.outputs.cidr != ''
+        env:
+          VAULT_SG_ID: ${{ vars.VAULT_SG_ID }}
+          RUNNER_CIDR: ${{ steps.vault_open.outputs.cidr }}
+        run: |
+          aws ec2 revoke-security-group-ingress --group-id "$VAULT_SG_ID" \
+            --ip-permissions "IpProtocol=tcp,FromPort=8200,ToPort=8200,IpRanges=[{CidrIp=$RUNNER_CIDR}]"
+
       - uses: azure/setup-helm@v4
         with:
           version: v4.0.1
@@ -60,10 +93,16 @@ jobs:
 
       - name: helm upgrade --install
         run: |
+          # La contraseña de Redis solo se pasa si se leyó de Vault (vault-action la enmascara en los logs)
+          VAULT_ARGS=()
+          if [ -n "${REDIS_PASSWORD:-}" ]; then
+            VAULT_ARGS+=(--set-string "cartDatabase.redisPassword=$REDIS_PASSWORD")
+          fi
           helm upgrade --install "$RELEASE" ./helm-chart \
             --namespace "$NAMESPACE" --create-namespace \
             --set images.repository="${{ steps.ecr.outputs.registry }}/$ECR_PREFIX" \
             --set images.tag="$IMAGE_TAG" \
+            "${VAULT_ARGS[@]}" \
             --rollback-on-failure \
             --timeout 10m
 

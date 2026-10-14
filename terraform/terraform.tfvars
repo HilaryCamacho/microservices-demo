@@ -6,4 +6,6 @@ github_repository = "HilaryCamacho/microservices-demo"
 github_oidc_subject_prefix = "repo:HilaryCamacho@188712338/microservices-demo@1356741854"
 
 # ARNs IAM de otros miembros del equipo que necesiten usar kubectl en el clúster
-cluster_admin_arns = []
+cluster_admin_arns = [
+  "arn:aws:iam::857146996872:user/danae.barba",
+]

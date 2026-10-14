@@ -34,3 +34,9 @@ gha-creds-*.json
 crash.log
 *.tfplan
 tfplan
+
+# Vault (Fase III): inventario generado, llaves de unseal, root token, token de CI y CA (solo locales)
+vault/ansible/inventory.ini
+vault/ansible/.secrets*/
+vault/ansible/.artifacts/
+vault/ansible/.ssh_known_hosts
