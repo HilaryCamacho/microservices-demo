@@ -721,3 +721,15 @@ func containsString(values []string, target string) bool {
 
 	return false
 }
+
+func (fe *frontendServer) profileHandler(w http.ResponseWriter, r *http.Request) {
+	petType, petAge, petSize := getPetProfile(r)
+
+	if err := templates.ExecuteTemplate(w, "profile", injectCommonTemplateData(r, map[string]interface{}{
+		"pet_type": petType,
+		"pet_age":  petAge,
+		"pet_size": petSize,
+	})); err != nil {
+		http.Error(w, "Could not render profile page", http.StatusInternalServerError)
+	}
+}
