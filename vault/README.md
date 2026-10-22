@@ -15,6 +15,8 @@ y GitHub Actions los consume con `hashicorp/vault-action` al desplegar.
 | 3. Configuración y conexión CI/CD | 7. Init, unseal, motor KV y UI | `ansible/init.yml` |
 | | 8. Política ACL de solo lectura y token único | `policies/online-boutique-ci.hcl`, `ansible/configure.yml` |
 | | 9. GitHub Actions con `vault-action` | `.github/workflows/cd.yaml` |
+| 4. Pruebas e inyección en K8s | 10. Prueba de integración completa | `cd.yaml` (verificación) y [Paso 10](#paso-10-prueba-de-integración-completa) |
+| | 11. Pruebas de resiliencia | `scripts/pruebas-resiliencia.sh` y [Paso 11](#paso-11-pruebas-de-resiliencia) |
 
 ## Topología
 
@@ -108,3 +110,66 @@ Destruir al terminar: `terraform destroy` con las mismas variables y `gh variabl
 para que el CD no intente conectarse a un Vault que ya no existe.
 
 Costo aproximado: USD 0.03 por hora (t3.small, IP pública y 20 GB gp3).
+
+## Paso 10: prueba de integración completa
+
+Un commit a `main` dispara el flujo completo, sin pasos manuales:
+
+```
+commit → PR aprobado → CI (build + push a ECR) → CD → OIDC en AWS → abre 8200 al runner
+       → diagnóstico de Vault → vault-action lee redis_password → cierra 8200
+       → helm upgrade (Secret redis-cart-auth) → pods reiniciados → verificación
+```
+
+El CD termina con **"Verificar la credencial inyectada desde Vault"**, que deja en el resumen del workflow:
+
+| Comprobación | Esperado |
+|---|---|
+| Huella de la contraseña en Vault / Secret `redis-cart-auth` / anotación de los pods | Las tres iguales |
+| Redis sin contraseña | `NOAUTH Authentication required` |
+| Redis con la contraseña del Secret | `PONG` |
+
+Se comparan huellas (los primeros 16 caracteres del SHA-256), así que la contraseña nunca se imprime.
+
+**Credenciales dinámicas (rotación):** la contraseña no está fija en el despliegue, se lee de Vault en cada ejecución.
+Para demostrarlo, se rota antes del commit y el siguiente despliegue usa la nueva:
+
+```bash
+cd vault/ansible
+ansible-playbook configure.yml -e vault_rotate_redis_password=true   # versión nueva en KV v2
+# commit → PR → main: el CD inyecta la nueva contraseña
+```
+
+Helm pone la huella de la contraseña como anotación (`checksum/redis-auth`) en los pods de `redis-cart` y `cartservice`.
+Si cambia, ambos se reinician juntos con la nueva. Si no, Redis seguiría con la anterior y el carrito dejaría
+de conectarse en el siguiente reinicio. KV v2 conserva la versión anterior para volver a ella si hace falta.
+Redis usa `emptyDir`, así que al rotar se vacían los carritos en curso.
+
+## Paso 11: pruebas de resiliencia
+
+Principio de diseño: **Vault solo se necesita al desplegar, no para que la tienda funcione.** La contraseña ya vive
+en el Secret de Kubernetes. Si Vault falla, el CD se detiene **antes de tocar el clúster** y producción sigue igual.
+
+| Fallo simulado | Cómo se provoca | Qué hace el pipeline | Cómo se recupera |
+|---|---|---|---|
+| **Token expirado** | Token de 30 s cargado en `VAULT_TOKEN` | `lookup-self` responde 403 → "el token expiró o fue revocado". Avisa si quedan menos de 7 días | `configure.yml` genera uno nuevo; `gh secret set VAULT_TOKEN` |
+| **Política ACL cambiada** | La política deja de cubrir `secret/data/online-boutique/*` | El token es válido, pero leer da 403 → "la política ya no permite leer" | `configure.yml` restaura la política versionada en Git (corrige la desviación) |
+| **Vault sellado** | `PUT /v1/sys/seal` | `/sys/health` responde 503 → "Vault está sellado" | `init.yml` lo desprecinta |
+
+En todos los casos se valida que:
+
+- el CD falla en **"Diagnóstico de Vault"** con el motivo y la recuperación en el resumen;
+- **no hay revisión nueva de Helm**, porque no se desplegó nada;
+- la tienda responde `200` en `/cart` durante todo el fallo;
+- la regla temporal del puerto 8200 **se cierra igual** (`if: always()`).
+
+`scripts/pruebas-resiliencia.sh` ejecuta los 3 escenarios, más una línea base antes y una recuperación al final.
+Lanza el CD con `workflow_dispatch` (solo permitido desde `main`), mide la disponibilidad de la tienda cada 5 s y
+genera una tabla en `ansible/.artifacts/resiliencia-<fecha>.md`:
+
+```bash
+vault/scripts/pruebas-resiliencia.sh
+```
+
+Requisitos: Vault inicializado con `init.yml` y `configure.yml`, variables de GitHub configuradas, `kubectl` conectado
+a EKS y la tienda desplegada.

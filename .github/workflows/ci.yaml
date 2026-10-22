@@ -61,6 +61,9 @@ jobs:
           printf '[vault]\n127.0.0.1\n' > /tmp/inventory.ini
           ansible-playbook -i /tmp/inventory.ini --syntax-check site.yml init.yml configure.yml
 
+      - name: Sintaxis de los scripts de Vault
+        run: for f in vault/scripts/*.sh; do bash -n "$f"; done
+
   test:
     name: Pruebas ${{ matrix.service }}
     runs-on: ubuntu-24.04
