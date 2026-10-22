@@ -3,3 +3,9 @@
 path "secret/data/online-boutique/*" {
   capabilities = ["read"]
 }
+
+# Consultar su propio token (TTL restante). Permite al pipeline distinguir un token
+# expirado de una política sin permiso y avisar antes de que venza.
+path "auth/token/lookup-self" {
+  capabilities = ["read"]
+}

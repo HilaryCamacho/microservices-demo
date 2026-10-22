@@ -62,6 +62,22 @@
       changed_when: true
       no_log: true
 
+    # KV v2 guarda la versión anterior: si algo falla se puede volver a ella desde la UI
+    - name: Rotar la contraseña de Redis (solo con -e vault_rotate_redis_password=true)
+      ansible.builtin.uri:
+        url: "{{ vault_local_addr }}/v1/secret/data/{{ vault_app_secret_path }}"
+        ca_path: "{{ vault_ca_cert }}"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_root_token }}"
+        body_format: json
+        body:
+          data:
+            redis_password: "{{ lookup('ansible.builtin.password', '/dev/null', chars=['ascii_letters', 'digits'], length=32) }}"
+      when: vault_rotate_redis_password | bool and vault_app_secret.status == 200
+      changed_when: true
+      no_log: true
+
     - name: ¿Hay un token del pipeline guardado?
       ansible.builtin.stat:
         path: "{{ vault_ci_token_file }}"

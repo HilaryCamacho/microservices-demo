@@ -13,3 +13,6 @@ vault_app_secret_path: online-boutique/app
 vault_ci_policy: online-boutique-ci
 vault_ci_token_file: "{{ vault_secrets_dir }}/ci-token"
 vault_ci_token_ttl: 720h
+
+# Paso 10: -e vault_rotate_redis_password=true genera una contraseña nueva (versión nueva en KV v2)
+vault_rotate_redis_password: false
