@@ -2,7 +2,7 @@
 # Paso 11 (pruebas de resiliencia): simula fallos críticos de Vault y comprueba que el diseño los aguanta.
 # Para cada escenario: provoca el fallo, lanza el CD y verifica que
 #   - el pipeline se detiene ANTES de tocar el clúster (no hay revisión nueva de Helm),
-#   - la tienda sigue respondiendo durante el fallo,
+#   - la tienda sigue respondiendo durante el fallo (medido desde un pod dentro del clúster),
 #   - el puerto 8200 queda cerrado para el runner,
 # y después recupera con los playbooks versionados en Git.
 #
@@ -17,10 +17,21 @@ CA="$ANSIBLE_DIR/.artifacts/vault-ca.pem"
 REPORT="$ANSIBLE_DIR/.artifacts/resiliencia-$(date +%Y%m%d-%H%M).md"
 NS=online-boutique
 RELEASE=online-boutique
+export AWS_REGION="${AWS_REGION:-us-east-2}"
 
 VAULT_ADDR="$(terraform -chdir="$ROOT/terraform" output -raw vault_addr)"
 VAULT_SG_ID="$(terraform -chdir="$ROOT/terraform" output -raw vault_security_group_id)"
-FRONTEND="http://$(kubectl get svc frontend-external -n "$NS" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
+
+# Reintenta un comando ante cortes de red de la máquina local (DNS, API de GitHub o AWS)
+retry() {
+  local attempt
+  for attempt in 1 2 3 4 5 6; do
+    "$@" && return 0
+    echo "    (falla de red, reintento $attempt/6)" >&2
+    sleep 10
+  done
+  return 1
+}
 
 # El root token va en un archivo 0600 (no en los argumentos de curl, visibles con ps)
 HEADER_FILE="$(mktemp)"
@@ -34,45 +45,48 @@ vault_api() { # método ruta [json]
 }
 
 helm_revision() {
-  helm history "$RELEASE" -n "$NS" --max 1 -o json | python3 -c 'import json,sys;print(json.load(sys.stdin)[-1]["revision"])'
+  retry helm history "$RELEASE" -n "$NS" --max 1 -o json | python3 -c 'import json,sys;print(json.load(sys.stdin)[-1]["revision"])'
 }
 
 runner_rules() { # reglas temporales del CD que siguen abiertas en el Security Group
-  aws ec2 describe-security-group-rules --filters "Name=group-id,Values=$VAULT_SG_ID" \
+  retry aws ec2 describe-security-group-rules --filters "Name=group-id,Values=$VAULT_SG_ID" \
     --query "length(SecurityGroupRules[?starts_with(Description || '', 'github-actions')])" --output text
 }
 
-# Disponibilidad de la tienda: una petición a /cart cada 5 s mientras corre el CD
+# Disponibilidad de la tienda medida DENTRO del clúster (no depende de la red local):
+# un pod consulta http://frontend/cart cada 5 s mientras corre el CD.
 monitor_start() {
-  MONITOR_LOG="$(mktemp)"
-  (while :; do
-    curl -s -o /dev/null -w '%{http_code}\n' --max-time 5 "$FRONTEND/cart" >> "$MONITOR_LOG" || echo 000 >> "$MONITOR_LOG"
-    sleep 5
-  done) &
-  MONITOR_PID=$!
+  MONITOR_POD="monitor-resiliencia-$(date +%s)"
+  retry kubectl run "$MONITOR_POD" -n "$NS" --image=curlimages/curl:8.11.1 --restart=Never --quiet --command -- \
+    sh -c 'while true; do curl -s -o /dev/null -w "%{http_code}\n" --max-time 5 http://frontend/cart; sleep 5; done' > /dev/null
+  retry kubectl wait -n "$NS" --for=condition=Ready "pod/$MONITOR_POD" --timeout=120s > /dev/null
 }
-monitor_stop() {
-  kill "$MONITOR_PID" 2>/dev/null || true
-  wait "$MONITOR_PID" 2>/dev/null || true
-  echo "$(grep -c '^200$' "$MONITOR_LOG" || true)/$(wc -l < "$MONITOR_LOG" | tr -d ' ')"
-  rm -f "$MONITOR_LOG"
+monitor_stop() { # deja MONITOR_RESULT (200/total) y MONITOR_DETAIL (conteo por código HTTP)
+  local codes
+  codes="$(retry kubectl logs -n "$NS" "$MONITOR_POD")"
+  retry kubectl delete pod -n "$NS" "$MONITOR_POD" --wait=false > /dev/null || true
+  MONITOR_RESULT="$(grep -c '^200$' <<< "$codes" || true)/$(grep -c . <<< "$codes" || true)"
+  MONITOR_DETAIL="$(sort <<< "$codes" | uniq -c | awk '{printf "%s×%s ", $1, $2}')"
 }
 
 run_cd() { # lanza el CD desde main y deja RUN_ID, RUN_CONCLUSION y RUN_ERROR
   local since
   since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  gh workflow run cd.yaml --ref main > /dev/null
+  retry gh workflow run cd.yaml --ref main > /dev/null
   RUN_ID=""
   for _ in $(seq 1 30); do
     RUN_ID="$(gh run list --workflow cd.yaml --event workflow_dispatch --limit 5 --json databaseId,createdAt \
-      --jq "[.[] | select(.createdAt >= \"$since\")][0].databaseId // empty")"
+      --jq "[.[] | select(.createdAt >= \"$since\")][0].databaseId // empty" 2> /dev/null || true)"
     [ -n "$RUN_ID" ] && break
     sleep 5
   done
   [ -n "$RUN_ID" ] || { echo "No se encontró la ejecución del CD" >&2; exit 1; }
-  gh run watch "$RUN_ID" --interval 15 > /dev/null 2>&1 || true
-  RUN_CONCLUSION="$(gh run view "$RUN_ID" --json conclusion --jq .conclusion)"
-  RUN_ERROR="$(gh run view "$RUN_ID" --log-failed 2>/dev/null | grep -m1 -o '##\[error\].*' | sed 's/##\[error\]//' || true)"
+  # Espera a que termine; los cortes de red durante la espera no cuentan como resultado
+  until [ "$(gh run view "$RUN_ID" --json status --jq .status 2> /dev/null || true)" = "completed" ]; do
+    sleep 15
+  done
+  RUN_CONCLUSION="$(retry gh run view "$RUN_ID" --json conclusion --jq .conclusion)"
+  RUN_ERROR="$(retry gh run view "$RUN_ID" --log-failed 2> /dev/null | grep -m1 -o '##\[error\].*' | sed 's/##\[error\]//' || true)"
 }
 
 ROWS=()
@@ -84,7 +98,8 @@ scenario() { # nombre función_falla función_recuperación resultado_esperado(s
   "$inject"
   monitor_start
   run_cd
-  availability="$(monitor_stop)"
+  monitor_stop
+  availability="$MONITOR_RESULT"
   rev_after="$(helm_revision)"
   open_rules="$(runner_rules)"
   "$restore"
@@ -98,8 +113,8 @@ scenario() { # nombre función_falla función_recuperación resultado_esperado(s
   else
     [ "$rev_after" -gt "$rev_before" ] || verdict="❌"
   fi
-  ROWS+=("| $name | $RUN_CONCLUSION | ${RUN_ERROR:-—} | $rev_before → $rev_after | $availability | $open_rules | $verdict |")
-  echo "    CD: $RUN_CONCLUSION · Helm $rev_before → $rev_after · tienda $availability OK · reglas abiertas: $open_rules · $verdict"
+  ROWS+=("| $name | $RUN_CONCLUSION | ${RUN_ERROR:-—} | $rev_before → $rev_after | $availability (${MONITOR_DETAIL% }) | $open_rules | $verdict |")
+  echo "    CD: $RUN_CONCLUSION · Helm $rev_before → $rev_after · tienda $availability OK (${MONITOR_DETAIL% }) · reglas abiertas: $open_rules · $verdict"
 }
 
 nothing() { :; }
@@ -113,7 +128,8 @@ inject_expired_token() {
   echo "    Token de 30 s cargado en GitHub; esperando a que expire..."
   sleep 40
 }
-restore_token() { gh secret set VAULT_TOKEN < "$SECRETS_DIR/ci-token"; }
+set_ci_token() { gh secret set VAULT_TOKEN < "$SECRETS_DIR/ci-token"; }
+restore_token() { retry set_ci_token; }
 
 # --- Escenario 2: alguien cambia la política ACL ------------------------------------------
 inject_policy_change() {
@@ -121,11 +137,12 @@ inject_policy_change() {
   vault_api PUT sys/policies/acl/online-boutique-ci \
     '{"policy":"path \"secret/data/otra-app/*\" { capabilities = [\"read\"] }\npath \"auth/token/lookup-self\" { capabilities = [\"read\"] }"}' > /dev/null
 }
-restore_policy() { (cd "$ANSIBLE_DIR" && ansible-playbook configure.yml < /dev/null > /dev/null); }
+run_playbook() { (cd "$ANSIBLE_DIR" && ansible-playbook "$1" < /dev/null > /dev/null); }
+restore_policy() { retry run_playbook configure.yml; }
 
 # --- Escenario 3: Vault se sella ----------------------------------------------------------
 inject_seal() { vault_api PUT sys/seal > /dev/null; }
-restore_unseal() { (cd "$ANSIBLE_DIR" && ansible-playbook init.yml < /dev/null > /dev/null); }
+restore_unseal() { retry run_playbook init.yml; }
 
 START=$(date +%s)
 scenario "0. Línea base (todo sano)" nothing nothing success
@@ -137,7 +154,7 @@ scenario "4. Recuperación (todo restaurado)" nothing nothing success
 {
   echo "## Pruebas de resiliencia de Vault ($(date '+%Y-%m-%d %H:%M'))"
   echo
-  echo "| Escenario | CD | Causa reportada por el pipeline | Revisión de Helm | Tienda (/cart 200) | Reglas 8200 abiertas | Resultado |"
+  echo "| Escenario | CD | Causa reportada por el pipeline | Revisión de Helm | Tienda: /cart 200, medido dentro del clúster | Reglas 8200 abiertas | Resultado |"
   echo "|---|---|---|---|---|---|---|"
   printf '%s\n' "${ROWS[@]}"
   echo
