@@ -38,11 +38,17 @@ spec:
       app: {{ .Values.cartService.name }}
   template:
     metadata:
-      {{- if .Values.cartDatabase.externalRedisTlsOrigination.enable }}
+      {{- if or .Values.cartDatabase.externalRedisTlsOrigination.enable .Values.cartDatabase.redisPassword }}
       annotations:
+        {{- if .Values.cartDatabase.externalRedisTlsOrigination.enable }}
         sidecar.istio.io/userVolumeMount: '[{"name": "{{ .Values.cartDatabase.externalRedisTlsOrigination.name }}", "mountPath": "/etc/certs", "readonly": true}]'
         sidecar.istio.io/userVolume: '[{"name": "{{ .Values.cartDatabase.externalRedisTlsOrigination.name }}", "secret": {"secretName": "{{ .Values.cartDatabase.externalRedisTlsOrigination.name }}"}}]'
         proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+        {{- end }}
+        {{- if .Values.cartDatabase.redisPassword }}
+        # Cambia cuando se rota la contraseña en Vault y reinicia el pod para que use la nueva
+        checksum/redis-auth: {{ .Values.cartDatabase.redisPassword | sha256sum | trunc 16 | quote }}
+        {{- end }}
       {{- end }}
       labels:
         app: {{ .Values.cartService.name }}
@@ -244,6 +250,11 @@ spec:
       app: {{ .Values.cartDatabase.inClusterRedis.name }}
   template:
     metadata:
+      {{- if .Values.cartDatabase.redisPassword }}
+      annotations:
+        # Mismo checksum que cartservice: ambos se reinician juntos al rotar la contraseña
+        checksum/redis-auth: {{ .Values.cartDatabase.redisPassword | sha256sum | trunc 16 | quote }}
+      {{- end }}
       labels:
         app: {{ .Values.cartDatabase.inClusterRedis.name }}
     spec:

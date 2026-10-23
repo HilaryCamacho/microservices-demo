@@ -1,5 +1,6 @@
 # CD: cuando un pull request se mergea a main y el CI termina bien, despliega en EKS
 # las imágenes que el CI subió a ECR (tag = SHA del commit) usando el Helm chart del repo.
+# También se puede lanzar a mano desde main (pruebas de resiliencia de la Fase III, paso 11).
 
 name: CD
 
@@ -8,6 +9,12 @@ on:
     workflows: [CI]
     types: [completed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Tag de las imágenes en ECR (SHA de un commit de main). Vacío = último commit de main"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -28,18 +35,20 @@ env:
 jobs:
   deploy:
     name: Deploy a EKS con Helm
-    # Solo despliega si el CI fue exitoso y corrió por un push a main (PR mergeado)
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    # Despliega si el CI fue exitoso por un push a main (PR mergeado), o a mano solo desde main
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-24.04
     environment:
       name: production
       url: ${{ steps.url.outputs.url }}
     env:
-      IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+      IMAGE_TAG: ${{ github.event.workflow_run.head_sha || inputs.image_tag || github.sha }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Credenciales AWS (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -64,7 +73,65 @@ jobs:
           aws ec2 authorize-security-group-ingress --group-id "$VAULT_SG_ID" \
             --ip-permissions "IpProtocol=tcp,FromPort=8200,ToPort=8200,IpRanges=[{CidrIp=$RUNNER_IP/32,Description=github-actions-${{ github.run_id }}}]"
 
+      # Falla rápido y con un motivo claro ANTES de tocar el clúster: lo que está en producción sigue igual
+      - name: Diagnóstico de Vault
+        if: vars.VAULT_ADDR != ''
+        env:
+          VAULT_ADDR: ${{ vars.VAULT_ADDR }}
+          VAULT_CACERT_B64: ${{ vars.VAULT_CACERT }}
+          VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
+        run: |
+          echo "$VAULT_CACERT_B64" | base64 -d > "$RUNNER_TEMP/vault-ca.pem"
+          CURL=(curl -s --max-time 10 --cacert "$RUNNER_TEMP/vault-ca.pem")
+          fail() {
+            echo "::error title=Vault::$1"
+            {
+              echo "### ⛔ Despliegue cancelado antes de tocar el clúster"
+              echo "- **Causa:** $1"
+              echo "- **Producción:** sin cambios, sigue la versión anterior"
+              echo "- **Recuperación:** $2"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+
+          # 1. ¿Vault responde y está desprecintado? (reintentos mientras se aplica la regla del Security Group)
+          for _ in 1 2 3 4 5 6; do
+            HEALTH=$("${CURL[@]}" -o /dev/null -w '%{http_code}' "$VAULT_ADDR/v1/sys/health" || true)
+            [ "$HEALTH" != "000" ] && break
+            sleep 5
+          done
+          case "$HEALTH" in
+            200) echo "Vault activo y desprecintado" ;;
+            503) fail "Vault está sellado (sealed)" "desprecintar con \`ansible-playbook init.yml\` y volver a ejecutar el CD" ;;
+            501) fail "Vault no está inicializado" "\`ansible-playbook init.yml\`" ;;
+            000) fail "Vault no responde en $VAULT_ADDR" "revisar la instancia EC2 y su Security Group" ;;
+            *) fail "Vault respondió HTTP $HEALTH en /sys/health" "revisar el estado del servidor" ;;
+          esac
+
+          # 2. ¿El token sigue vigente?
+          LOOKUP=$("${CURL[@]}" -o "$RUNNER_TEMP/lookup.json" -w '%{http_code}' \
+            -H "X-Vault-Token: $VAULT_TOKEN" "$VAULT_ADDR/v1/auth/token/lookup-self" || true)
+          if [ "$LOOKUP" != "200" ]; then
+            fail "el token de Vault expiró o fue revocado (HTTP $LOOKUP)" \
+              "generar uno nuevo con \`ansible-playbook configure.yml\` y actualizar el secreto VAULT_TOKEN"
+          fi
+          TTL=$(jq -r '.data.ttl' "$RUNNER_TEMP/lookup.json")
+          rm -f "$RUNNER_TEMP/lookup.json"
+          echo "TTL restante del token: $((TTL / 3600)) h"
+          if [ "$TTL" -gt 0 ] && [ "$TTL" -lt 604800 ]; then
+            echo "::warning title=Vault::El token vence en $((TTL / 3600)) h. Renuévalo con configure.yml antes de que expire."
+          fi
+
+          # 3. ¿La política permite leer el secreto de la app?
+          READ=$("${CURL[@]}" -o /dev/null -w '%{http_code}' \
+            -H "X-Vault-Token: $VAULT_TOKEN" "$VAULT_ADDR/v1/secret/data/online-boutique/app" || true)
+          if [ "$READ" != "200" ]; then
+            fail "la política ACL ya no permite leer secret/online-boutique/app (HTTP $READ)" \
+              "restaurar la política versionada en Git con \`ansible-playbook configure.yml\`"
+          fi
+
       - name: Leer secretos de Vault
+        id: vault_read
         if: vars.VAULT_ADDR != ''
         uses: hashicorp/vault-action@v3
         with:
@@ -110,6 +177,32 @@ jobs:
         run: |
           kubectl get pods -n "$NAMESPACE" -o wide
           helm history "$RELEASE" -n "$NAMESPACE" --max 5
+
+      # Paso 10: la credencial que quedó en el clúster es la misma que está en Vault.
+      # Se comparan hashes (la contraseña nunca se imprime).
+      - name: Verificar la credencial inyectada desde Vault
+        if: steps.vault_read.outcome == 'success'
+        run: |
+          kubectl rollout status deploy/redis-cart -n "$NAMESPACE" --timeout 3m
+          kubectl rollout status deploy/cartservice -n "$NAMESPACE" --timeout 3m
+          VAULT_HASH=$(printf '%s' "$REDIS_PASSWORD" | sha256sum | cut -c1-16)
+          K8S_HASH=$(kubectl get secret redis-cart-auth -n "$NAMESPACE" -o jsonpath='{.data.password}' | base64 -d | sha256sum | cut -c1-16)
+          # Huella que Helm pone en los pods: confirma que los pods en ejecución usan esta versión
+          POD_HASH=$(kubectl get deploy cartservice -n "$NAMESPACE" -o jsonpath='{.spec.template.metadata.annotations.checksum/redis-auth}')
+          NOAUTH=$(kubectl exec -n "$NAMESPACE" deploy/redis-cart -- redis-cli PING 2>&1 | head -1)
+          AUTH=$(kubectl exec -n "$NAMESPACE" deploy/redis-cart -- sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli PING' 2>&1 | head -1)
+          {
+            echo "### 🔐 Credencial inyectada desde Vault"
+            echo "| Comprobación | Resultado |"
+            echo "|---|---|"
+            echo "| Huella de la contraseña: Vault / Secret \`redis-cart-auth\` / pods | \`$VAULT_HASH\` / \`$K8S_HASH\` / \`$POD_HASH\` |"
+            echo "| Redis sin contraseña | \`$NOAUTH\` |"
+            echo "| Redis con la contraseña del Secret | \`$AUTH\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$VAULT_HASH" != "$K8S_HASH" ] || [ "$VAULT_HASH" != "$POD_HASH" ] || [[ "$NOAUTH" != NOAUTH* ]] || [ "$AUTH" != "PONG" ]; then
+            echo "::error::La credencial del clúster no coincide con la de Vault"
+            exit 1
+          fi
 
       - name: URL pública del frontend
         id: url
