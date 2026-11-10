@@ -81,3 +81,34 @@ func ValidationErrorResponse(err error) error {
 	}
 	return fmt.Errorf("%s", msg)
 }
+
+// checkoutFieldMessages explica al usuario qué corregir en cada campo del formulario de pago.
+var checkoutFieldMessages = map[string]string{
+	"Email":         "Enter a valid e-mail address.",
+	"StreetAddress": "Enter the street address.",
+	"ZipCode":       "Enter a valid zip code (numbers only).",
+	"City":          "Enter the city.",
+	"State":         "Enter the state.",
+	"Country":       "Enter the country.",
+	"CcNumber":      "The card number is not valid. Use a test card such as 4111 1111 1111 1111.",
+	"CcMonth":       "Select the expiration month.",
+	"CcYear":        "Select the expiration year.",
+	"CcCVV":         "Enter the 3 or 4 digit security code (CVV).",
+}
+
+// CheckoutErrorMessages convierte los errores de validación del pago en mensajes para el usuario.
+func CheckoutErrorMessages(err error) []string {
+	var validationErrs validator.ValidationErrors
+	if !errors.As(err, &validationErrs) {
+		return []string{"Please review the checkout information."}
+	}
+	var msgs []string
+	for _, fieldErr := range validationErrs {
+		if msg, ok := checkoutFieldMessages[fieldErr.Field()]; ok {
+			msgs = append(msgs, msg)
+		} else {
+			msgs = append(msgs, fmt.Sprintf("Field '%s' is invalid.", fieldErr.Field()))
+		}
+	}
+	return msgs
+}

@@ -30,6 +30,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"google.golang.org/grpc/status"
 
 	pb "github.com/GoogleCloudPlatform/microservices-demo/src/frontend/genproto"
 	"github.com/GoogleCloudPlatform/microservices-demo/src/frontend/money"
@@ -269,7 +270,33 @@ func (fe *frontendServer) emptyCartHandler(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusFound)
 }
 
+// checkoutForm son los datos que el usuario escribió en el pago. Si algo falla, se vuelven a
+// mostrar para no tener que capturarlos otra vez (excepto la tarjeta y el CVV).
+type checkoutForm struct {
+	Email         string
+	StreetAddress string
+	ZipCode       string
+	City          string
+	State         string
+	Country       string
+	Month         int
+	Year          int
+}
+
+var expirationMonths = []struct {
+	Value int
+	Label string
+}{
+	{1, "January"}, {2, "February"}, {3, "March"}, {4, "April"}, {5, "May"}, {6, "June"},
+	{7, "July"}, {8, "August"}, {9, "September"}, {10, "October"}, {11, "November"}, {12, "December"},
+}
+
 func (fe *frontendServer) viewCartHandler(w http.ResponseWriter, r *http.Request) {
+	fe.renderCart(w, r, http.StatusOK, checkoutForm{}, nil)
+}
+
+// renderCart muestra el carrito con el formulario de pago, opcionalmente con errores del pago.
+func (fe *frontendServer) renderCart(w http.ResponseWriter, r *http.Request, code int, checkout checkoutForm, checkoutErrors []string) {
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	log.Debug("view user cart")
 	currencies, err := fe.getCurrencies(r.Context())
@@ -334,15 +361,19 @@ func (fe *frontendServer) viewCartHandler(w http.ResponseWriter, r *http.Request
 	}
 	recommendations = petRecommendations(recommendations, catalog, recommendationPetTypes(r, cartProducts), cartIDs(cart))
 
+	w.WriteHeader(code)
 	if err := templates.ExecuteTemplate(w, "cart", injectCommonTemplateData(r, map[string]interface{}{
-		"currencies":       currencies,
-		"recommendations":  recommendations,
-		"cart_size":        cartSize(cart),
-		"shipping_cost":    shippingCost,
-		"show_currency":    true,
-		"total_cost":       totalPrice,
-		"items":            items,
-		"expiration_years": []int{year, year + 1, year + 2, year + 3, year + 4},
+		"currencies":        currencies,
+		"recommendations":   recommendations,
+		"cart_size":         cartSize(cart),
+		"shipping_cost":     shippingCost,
+		"show_currency":     true,
+		"total_cost":        totalPrice,
+		"items":             items,
+		"expiration_months": expirationMonths,
+		"expiration_years":  []int{year, year + 1, year + 2, year + 3, year + 4},
+		"checkout":          checkout,
+		"checkout_errors":   checkoutErrors,
 	})); err != nil {
 		log.Println(err)
 	}
@@ -359,7 +390,7 @@ func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Reque
 		city          = r.FormValue("city")
 		state         = r.FormValue("state")
 		country       = r.FormValue("country")
-		ccNumber      = r.FormValue("credit_card_number")
+		ccNumber      = strings.NewReplacer(" ", "", "-", "").Replace(r.FormValue("credit_card_number"))
 		ccMonth, _    = strconv.ParseInt(r.FormValue("credit_card_expiration_month"), 10, 32)
 		ccYear, _     = strconv.ParseInt(r.FormValue("credit_card_expiration_year"), 10, 32)
 		ccCVV, _      = strconv.ParseInt(r.FormValue("credit_card_cvv"), 10, 32)
@@ -377,8 +408,20 @@ func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Reque
 		CcYear:        ccYear,
 		CcCVV:         ccCVV,
 	}
+	// Lo que el usuario escribió, para volver a mostrarlo si hay un error (sin tarjeta ni CVV)
+	checkout := checkoutForm{
+		Email:         email,
+		StreetAddress: streetAddress,
+		ZipCode:       r.FormValue("zip_code"),
+		City:          city,
+		State:         state,
+		Country:       country,
+		Month:         int(ccMonth),
+		Year:          int(ccYear),
+	}
 	if err := payload.Validate(); err != nil {
-		renderHTTPError(log, r, w, validator.ValidationErrorResponse(err), http.StatusUnprocessableEntity)
+		log.WithField("error", validator.ValidationErrorResponse(err)).Info("invalid checkout data")
+		fe.renderCart(w, r, http.StatusUnprocessableEntity, checkout, validator.CheckoutErrorMessages(err))
 		return
 	}
 
@@ -400,7 +443,11 @@ func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Reque
 				Country:       payload.Country},
 		})
 	if err != nil {
-		renderHTTPError(log, r, w, errors.Wrap(err, "failed to complete the order"), http.StatusInternalServerError)
+		log.WithField("error", err).Warn("failed to complete the order")
+		fe.renderCart(w, r, http.StatusUnprocessableEntity, checkout, []string{
+			"We couldn't complete the payment: " + status.Convert(err).Message(),
+			"Check the card details: VISA or Mastercard and not expired.",
+		})
 		return
 	}
 	log.WithField("order", order.GetOrder().GetOrderId()).Info("order placed")
@@ -413,6 +460,8 @@ func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Reque
 		multPrice := money.MultiplySlow(*v.GetCost(), uint32(v.GetItem().GetQuantity()))
 		totalPaid = money.Must(money.Sum(totalPaid, multPrice))
 	}
+
+	orders.add(sessionID(r), fe.newStoredOrder(r, order.GetOrder(), &totalPaid, payload.CcNumber))
 
 	currencies, err := fe.getCurrencies(r.Context())
 	if err != nil {
@@ -756,5 +805,63 @@ func (fe *frontendServer) profileHandler(w http.ResponseWriter, r *http.Request)
 		"pet_options": petProfileOptions,
 	})); err != nil {
 		http.Error(w, "Could not render profile page", http.StatusInternalServerError)
+	}
+}
+
+// newStoredOrder arma el pedido para el historial con el nombre e imagen de cada producto.
+func (fe *frontendServer) newStoredOrder(r *http.Request, order *pb.OrderResult, total *pb.Money, ccNumber string) *storedOrder {
+	items := make([]orderItemView, len(order.GetItems()))
+	for i, item := range order.GetItems() {
+		view := orderItemView{
+			ProductID: item.GetItem().GetProductId(),
+			Name:      item.GetItem().GetProductId(),
+			Quantity:  item.GetItem().GetQuantity(),
+			Cost:      item.GetCost(),
+		}
+		if p, err := fe.getProduct(r.Context(), view.ProductID); err == nil {
+			view.Name = p.GetName()
+			view.Picture = p.GetPicture()
+		}
+		items[i] = view
+	}
+	address := order.GetShippingAddress()
+	return &storedOrder{
+		ID:           order.GetOrderId(),
+		TrackingID:   order.GetShippingTrackingId(),
+		PlacedAt:     time.Now(),
+		Items:        items,
+		ShippingCost: order.GetShippingCost(),
+		Total:        total,
+		ShipTo:       strings.Join([]string{address.GetCity(), address.GetState(), address.GetCountry()}, ", "),
+		CardLast4:    cardLast4(ccNumber),
+	}
+}
+
+func (fe *frontendServer) ordersHandler(w http.ResponseWriter, r *http.Request) {
+	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
+	now := time.Now()
+	stored := orders.list(sessionID(r))
+	summaries := make([]orderSummary, len(stored))
+	for i, order := range stored {
+		summaries[i] = summarizeOrder(order, now)
+	}
+	if err := templates.ExecuteTemplate(w, "orders", injectCommonTemplateData(r, map[string]interface{}{
+		"orders": summaries,
+	})); err != nil {
+		log.Println(err)
+	}
+}
+
+func (fe *frontendServer) orderDetailHandler(w http.ResponseWriter, r *http.Request) {
+	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
+	order := orders.get(sessionID(r), mux.Vars(r)["id"])
+	if order == nil {
+		renderHTTPError(log, r, w, errors.New("order not found"), http.StatusNotFound)
+		return
+	}
+	if err := templates.ExecuteTemplate(w, "order_detail", injectCommonTemplateData(r, map[string]interface{}{
+		"order": summarizeOrder(order, time.Now()),
+	})); err != nil {
+		log.Println(err)
 	}
 }

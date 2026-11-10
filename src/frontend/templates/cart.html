@@ -101,6 +101,15 @@
 
                     <form class="cart-checkout-form" action="{{ $.baseUrl }}/cart/checkout" method="POST">
 
+                        {{ with $.checkout_errors }}
+                        <div class="checkout-errors" role="alert">
+                            <strong>Please review your information:</strong>
+                            <ul>
+                                {{ range . }}<li>{{ . }}</li>{{ end }}
+                            </ul>
+                        </div>
+                        {{ end }}
+
                         <div class="row">
                             <div class="col">
                                 <h3>Shipping Address</h3>
@@ -110,46 +119,52 @@
                         <div class="form-row">
                             <div class="col cymbal-form-field">
                                 <label for="email">E-mail Address</label>
-                                <input type="email" id="email"
-                                    name="email" value="someone@example.com" required>
+                                <input type="email" id="email" name="email"
+                                    value="{{ $.checkout.Email }}" placeholder="you@example.com"
+                                    autocomplete="email" required>
                             </div>
                         </div>
 
                         <div class="form-row">
                             <div class="col cymbal-form-field">
                                 <label for="street_address">Street Address</label>
-                                <input type="text" name="street_address"
-                                    id="street_address" value="1600 Amphitheatre Parkway" required>
+                                <input type="text" id="street_address" name="street_address"
+                                    value="{{ $.checkout.StreetAddress }}" placeholder="Street and number"
+                                    autocomplete="street-address" maxlength="512" required>
                             </div>
                         </div>
 
                         <div class="form-row">
                             <div class="col cymbal-form-field">
                                 <label for="zip_code">Zip Code</label>
-                                <input type="text"
-                                    name="zip_code" id="zip_code" value="94043" required pattern="\d{4,5}">
+                                <input type="text" id="zip_code" name="zip_code"
+                                    value="{{ $.checkout.ZipCode }}" placeholder="64000"
+                                    autocomplete="postal-code" inputmode="numeric" pattern="\d{4,5}"
+                                    title="4 or 5 digits" required>
                             </div>
                         </div>
 
                         <div class="form-row">
                             <div class="col cymbal-form-field">
                                 <label for="city">City</label>
-                                <input type="text" name="city" id="city"
-                                    value="Mountain View" required>
-                                </div>
+                                <input type="text" id="city" name="city"
+                                    value="{{ $.checkout.City }}" placeholder="City"
+                                    autocomplete="address-level2" maxlength="128" required>
                             </div>
+                        </div>
 
                         <div class="form-row">
                             <div class="col-md-5 cymbal-form-field">
                                 <label for="state">State</label>
-                                <input type="text" name="state" id="state"
-                                    value="CA" required>
+                                <input type="text" id="state" name="state"
+                                    value="{{ $.checkout.State }}" placeholder="State"
+                                    autocomplete="address-level1" maxlength="128" required>
                             </div>
                             <div class="col-md-7 cymbal-form-field">
                                 <label for="country">Country</label>
-                                <input type="text" id="country"
-                                    placeholder="Country Name"
-                                    name="country" value="United States" required>
+                                <input type="text" id="country" name="country"
+                                    value="{{ $.checkout.Country }}" placeholder="Country"
+                                    autocomplete="country-name" maxlength="128" required>
                             </div>
                         </div>
 
@@ -159,51 +174,47 @@
                             </div>
                         </div>
 
+                        <p class="checkout-test-card-note">
+                            Demo store: use a test card such as <strong>4111 1111 1111 1111</strong>.
+                            Do not enter real card details.
+                        </p>
+
                         <div class="form-row">
                             <div class="col cymbal-form-field">
                                 <label for="credit_card_number">Credit Card Number</label>
-                                <input type="text" id="credit_card_number"
-                                    name="credit_card_number"
-                                    placeholder="0000000000000000"
-                                    value="4432801561520454"
-                                    required pattern="\d{16}">
+                                <input type="text" id="credit_card_number" name="credit_card_number"
+                                    placeholder="0000 0000 0000 0000"
+                                    autocomplete="cc-number" inputmode="numeric" maxlength="23"
+                                    pattern="[\d\s-]{13,23}" title="13 to 19 digits" required>
                             </div>
                         </div>
 
                         <div class="form-row">
                             <div class="col-md-5 cymbal-form-field">
                                 <label for="credit_card_expiration_month">Month</label>
-                                <select name="credit_card_expiration_month" id="credit_card_expiration_month">
-                                    <option value="1">January</option>
-                                    <option value="2">February</option>
-                                    <option value="3">March</option>
-                                    <option value="4">April</option>
-                                    <option value="5">May</option>
-                                    <option value="6">June</option>
-                                    <option value="7">July</option>
-                                    <option value="8">August</option>
-                                    <option value="9">September</option>
-                                    <option value="10">October</option>
-                                    <option value="11">November</option>
-                                    <option value="12">January</option>
+                                <select name="credit_card_expiration_month" id="credit_card_expiration_month"
+                                    autocomplete="cc-exp-month" required>
+                                    <option value="">Month</option>
+                                    {{ range $.expiration_months }}<option value="{{ .Value }}"
+                                        {{ if eq .Value $.checkout.Month }}selected="selected"{{ end }}>{{ .Label }}</option>{{ end }}
                                 </select>
                                 <img src="{{ $.baseUrl }}/static/icons/Hipster_DownArrow.svg" alt="" class="cymbal-dropdown-chevron">
                             </div>
                             <div class="col-md-4 cymbal-form-field">
-                                    <label for="credit_card_expiration_year">Year</label>
-                                    <select name="credit_card_expiration_year" id="credit_card_expiration_year">
-                                    {{ range $i, $y := $.expiration_years}}<option value="{{$y}}"
-                                        {{if eq $i 1 -}}
-                                            selected="selected"
-                                        {{- end}}
-                                    >{{$y}}</option>{{end}}
-                                    </select>
-                                    <img src="{{ $.baseUrl }}/static/icons/Hipster_DownArrow.svg" alt="" class="cymbal-dropdown-chevron">
-                                </div>
+                                <label for="credit_card_expiration_year">Year</label>
+                                <select name="credit_card_expiration_year" id="credit_card_expiration_year"
+                                    autocomplete="cc-exp-year" required>
+                                    <option value="">Year</option>
+                                    {{ range $.expiration_years }}<option value="{{ . }}"
+                                        {{ if eq . $.checkout.Year }}selected="selected"{{ end }}>{{ . }}</option>{{ end }}
+                                </select>
+                                <img src="{{ $.baseUrl }}/static/icons/Hipster_DownArrow.svg" alt="" class="cymbal-dropdown-chevron">
+                            </div>
                             <div class="col-md-3 cymbal-form-field">
                                 <label for="credit_card_cvv">CVV</label>
-                                <input type="password" id="credit_card_cvv"
-                                    name="credit_card_cvv" value="672" required pattern="\d{3}">
+                                <input type="password" id="credit_card_cvv" name="credit_card_cvv"
+                                    placeholder="123" autocomplete="cc-csc" inputmode="numeric"
+                                    maxlength="4" pattern="\d{3,4}" title="3 or 4 digits" required>
                             </div>
                         </div>
 

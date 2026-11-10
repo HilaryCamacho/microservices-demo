@@ -167,6 +167,8 @@ func main() {
 	r.HandleFunc(baseUrl+"/product-meta/{ids}", svc.getProductByID).Methods(http.MethodGet)
 	r.HandleFunc(baseUrl+"/bot", svc.chatBotHandler).Methods(http.MethodPost)
 	r.HandleFunc(baseUrl+"/profile", svc.profileHandler).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc(baseUrl+"/orders", svc.ordersHandler).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc(baseUrl+"/orders/{id}", svc.orderDetailHandler).Methods(http.MethodGet, http.MethodHead)
 
 	var handler http.Handler = r
 	handler = &logHandler{log: log, next: handler}     // add logging

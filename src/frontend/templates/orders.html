@@ -1,0 +1,103 @@
+{{ define "orders" }}
+{{ template "header" . }}
+<div {{ with $.platform_css }} class="{{.}}" {{ end }}>
+  <span class="platform-flag">
+    {{$.platform_name}}
+  </span>
+</div>
+
+<main role="main" class="container py-5 orders-page">
+  <div class="row justify-content-center">
+    <div class="col-12 col-lg-9">
+      <h2>📦 My Orders</h2>
+
+      {{ if $.orders }}
+      <p class="orders-subtitle">Follow the progress of every purchase made from this browser.</p>
+      {{ range $.orders }}
+      <a class="order-card" href="{{ $.baseUrl }}/orders/{{ .ID }}">
+        <div class="order-card-header">
+          <div>
+            <div class="order-card-id">Order {{ .ID }}</div>
+            <div class="order-card-date">{{ .PlacedAt.Format "Jan 2, 2006 · 15:04" }}</div>
+          </div>
+          <span class="order-status order-status-{{ .Status }}">{{ .Status }}</span>
+        </div>
+        <div class="order-card-items">
+          {{ range .Items }}<span>{{ .Quantity }} × {{ .Name }}</span>{{ end }}
+        </div>
+        <div class="order-card-total">Total: <strong>{{ renderMoney .Total }}</strong></div>
+      </a>
+      {{ end }}
+      {{ else }}
+      <div class="card p-4 text-center">
+        <p>You haven't placed any orders yet.</p>
+        <a class="cymbal-button-primary" href="{{ $.baseUrl }}/" role="button">Start Shopping</a>
+      </div>
+      {{ end }}
+    </div>
+  </div>
+</main>
+
+{{ template "footer" . }}
+{{ end }}
+
+{{ define "order_detail" }}
+{{ template "header" . }}
+<div {{ with $.platform_css }} class="{{.}}" {{ end }}>
+  <span class="platform-flag">
+    {{$.platform_name}}
+  </span>
+</div>
+
+<main role="main" class="container py-5 orders-page">
+  <div class="row justify-content-center">
+    <div class="col-12 col-lg-9">
+      <a href="{{ $.baseUrl }}/orders">← My Orders</a>
+      <h2 class="mt-3">Order {{ $.order.ID }}</h2>
+      <p class="order-card-date">
+        Placed on {{ $.order.PlacedAt.Format "Jan 2, 2006 · 15:04" }} ·
+        <span class="order-status order-status-{{ $.order.Status }}">{{ $.order.Status }}</span>
+      </p>
+
+      <ol class="order-timeline">
+        {{ range $.order.Steps }}
+        <li class="{{ if .Done }}done{{ end }} {{ if .Current }}current{{ end }}">
+          <div class="order-timeline-label">{{ .Label }}</div>
+          <div class="order-timeline-description">{{ .Description }}</div>
+          {{ if .Done }}<div class="order-timeline-time">{{ .At.Format "15:04" }}</div>{{ end }}
+        </li>
+        {{ end }}
+      </ol>
+
+      <div class="card p-4 mb-4">
+        <h3>Items</h3>
+        {{ range $.order.Items }}
+        <div class="order-detail-item">
+          {{ if .Picture }}<img src="{{ $.baseUrl }}{{ .Picture }}" alt="">{{ end }}
+          <a href="{{ $.baseUrl }}/product/{{ .ProductID }}">{{ .Name }}</a>
+          <span>{{ .Quantity }} × {{ renderMoney .Cost }}</span>
+        </div>
+        {{ end }}
+        <div class="order-detail-row"><span>Shipping</span><span>{{ renderMoney $.order.ShippingCost }}</span></div>
+        <div class="order-detail-row order-detail-total"><span>Total paid</span><span>{{ renderMoney $.order.Total }}</span></div>
+      </div>
+
+      <div class="card p-4">
+        <h3>Delivery</h3>
+        <p><strong>Ship to:</strong> {{ $.order.ShipTo }}</p>
+        <p><strong>Tracking #:</strong> {{ $.order.TrackingID }}</p>
+        {{ with $.order.CardLast4 }}<p><strong>Paid with:</strong> card ending in {{ . }}</p>{{ end }}
+      </div>
+    </div>
+  </div>
+</main>
+
+{{ if not $.order.Finished }}
+<script>
+  // Actualiza la línea de tiempo cada 30 s mientras el pedido no se entrega
+  setTimeout(function () { window.location.reload(); }, 30000);
+</script>
+{{ end }}
+
+{{ template "footer" . }}
+{{ end }}
