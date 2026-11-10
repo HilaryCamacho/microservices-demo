@@ -51,5 +51,8 @@
   </div>
 </main>
 
+<script>window.PET_OPTIONS = {{ $.pet_options }};</script>
+<script src="{{ $.baseUrl }}/static/js/pet-profile.js"></script>
+
 {{ template "footer" . }}
 {{ end }}
