@@ -35,6 +35,21 @@
           <p class="product-price">{{ renderMoney $.product.Price }}</p>
           <p>{{ $.product.Item.Description }}</p>
 
+          {{ with $.product.Item.PetTypes }}
+          <div class="product-pet-fit">
+            <h3>Ideal for</h3>
+            <div class="pet-tags">
+              {{ range . }}<span class="pet-tag">{{ petEmoji . }} {{ petLabel . }}</span>{{ end }}
+            </div>
+            {{ with $.product.Item.PetAges }}
+            <p><strong>Age:</strong> {{ range $i, $age := . }}{{ if $i }}, {{ end }}{{ petLabel $age }}{{ end }}</p>
+            {{ end }}
+            {{ with $.product.Item.PetSizes }}
+            <p><strong>Size:</strong> {{ range $i, $size := . }}{{ if $i }}, {{ end }}{{ petLabel $size }}{{ end }}</p>
+            {{ end }}
+          </div>
+          {{ end }}
+
           {{ if $.packagingInfo }}
           <div class="product-packaging">
             <h3>Packaging</h3>

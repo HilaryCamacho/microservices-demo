@@ -153,7 +153,19 @@
 
           <div class="col-12">
             {{ if $.pet_type }}
-              <h3>Products for your {{ $.pet_type }}</h3>
+              <h3>Products for your {{ $.pet_type }} {{ petEmoji $.pet_type }}</h3>
+              <div class="pet-profile-bar">
+                <span>
+                  Showing products for
+                  <strong>{{ petLabel $.pet_type }}</strong>
+                  {{ with $.pet_age }} · {{ petLabel . }}{{ end }}
+                  {{ with $.pet_size }} · {{ petLabel . }}{{ end }}
+                </span>
+                <!-- Un perfil vacío borra el filtro -->
+                <form method="POST" action="{{ $.baseUrl }}/setPetProfile">
+                  <button type="submit" class="btn btn-link pet-profile-clear">Clear filter</button>
+                </form>
+              </div>
             {{ else }}
               <h3>Hot Products</h3>
             {{ end }}
@@ -168,6 +180,9 @@
 
             <div>
               <div class="hot-product-card-name">{{ .Item.Name }}</div>
+              <div class="pet-tags">
+                {{ range .Item.PetTypes }}<span class="pet-tag">{{ petEmoji . }} {{ petLabel . }}</span>{{ end }}
+              </div>
               <div class="hot-product-card-price">
                 {{ renderMoney .Price }}
               </div>
