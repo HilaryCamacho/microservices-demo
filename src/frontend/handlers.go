@@ -126,6 +126,7 @@ func (fe *frontendServer) homeHandler(w http.ResponseWriter, r *http.Request) {
 		"pet_type":      petType,
 		"pet_age":       petAge,
 		"pet_size":      petSize,
+		"pet_options":   petProfileOptions,
 		"banner_color":  os.Getenv("BANNER_COLOR"), // illustrates canary deployments
 		"ad":            fe.chooseAd(r.Context(), []string{}, log),
 	})); err != nil {
@@ -649,9 +650,7 @@ func stringinSlice(slice []string, val string) bool {
 }
 
 func (fe *frontendServer) setPetProfileHandler(w http.ResponseWriter, r *http.Request) {
-	petType := r.FormValue("pet_type")
-	petAge := r.FormValue("pet_age")
-	petSize := r.FormValue("pet_size")
+	petType, petAge, petSize := normalizePetProfile(r.FormValue("pet_type"), r.FormValue("pet_age"), r.FormValue("pet_size"))
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookiePetType,
@@ -685,7 +684,8 @@ func getPetProfile(r *http.Request) (string, string, string) {
 	petAge := getCookieValue(r, cookiePetAge)
 	petSize := getCookieValue(r, cookiePetSize)
 
-	return petType, petAge, petSize
+	// Una cookie con una combinación inválida (o modificada a mano) no debe vaciar la tienda
+	return normalizePetProfile(petType, petAge, petSize)
 }
 
 func getCookieValue(r *http.Request, name string) string {
@@ -726,9 +726,10 @@ func (fe *frontendServer) profileHandler(w http.ResponseWriter, r *http.Request)
 	petType, petAge, petSize := getPetProfile(r)
 
 	if err := templates.ExecuteTemplate(w, "profile", injectCommonTemplateData(r, map[string]interface{}{
-		"pet_type": petType,
-		"pet_age":  petAge,
-		"pet_size": petSize,
+		"pet_type":    petType,
+		"pet_age":     petAge,
+		"pet_size":    petSize,
+		"pet_options": petProfileOptions,
 	})); err != nil {
 		http.Error(w, "Could not render profile page", http.StatusInternalServerError)
 	}
