@@ -164,7 +164,8 @@ En todos los casos se valida que:
 - la regla temporal del puerto 8200 **se cierra igual** (`if: always()`).
 
 `scripts/pruebas-resiliencia.sh` ejecuta los 3 escenarios, más una línea base antes y una recuperación al final.
-Lanza el CD con `workflow_dispatch` (solo permitido desde `main`), mide la disponibilidad de la tienda cada 5 s y
+Lanza el CD con `workflow_dispatch` (solo permitido desde `main`). Mide la disponibilidad de la tienda cada 5 s **desde un pod
+dentro del clúster**, para no depender de la red local, reintenta ante cortes de red de la máquina que lo ejecuta y
 genera una tabla en `ansible/.artifacts/resiliencia-<fecha>.md`:
 
 ```bash
