@@ -898,3 +898,16 @@ the rules below could be extracted.
   justify-content: center;
   gap: 12px;
 }
+
+/* Botón "Home" del encabezado: se ve como los enlaces Profile y Orders */
+header .home-link-form {
+  display: flex;
+  margin: 0;
+}
+
+header .home-link {
+  padding: 0;
+  border: 0;
+  font-size: inherit;
+  line-height: inherit;
+}
