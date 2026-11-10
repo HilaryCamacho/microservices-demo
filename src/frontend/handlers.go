@@ -15,7 +15,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -50,6 +49,8 @@ var (
 				Funcs(template.FuncMap{
 			"renderMoney":        renderMoney,
 			"renderCurrencyLogo": renderCurrencyLogo,
+			"petEmoji":           petEmoji,
+			"petLabel":           petLabel,
 		}).ParseGlob("templates/*.html"))
 	plat platformDetails
 )
@@ -128,7 +129,7 @@ func (fe *frontendServer) homeHandler(w http.ResponseWriter, r *http.Request) {
 		"pet_size":      petSize,
 		"pet_options":   petProfileOptions,
 		"banner_color":  os.Getenv("BANNER_COLOR"), // illustrates canary deployments
-		"ad":            fe.chooseAd(r.Context(), []string{}, log),
+		"ad":            fe.chooseAd(r, []string{}, log),
 	})); err != nil {
 		log.Error(err)
 	}
@@ -194,6 +195,11 @@ func (fe *frontendServer) productHandler(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		log.WithField("error", err).Warn("failed to get product recommendations")
 	}
+	catalog, err := fe.getProducts(r.Context())
+	if err != nil {
+		log.WithField("error", err).Warn("failed to get products for pet recommendations")
+	}
+	recommendations = petRecommendations(recommendations, catalog, recommendationPetTypes(r, []*pb.Product{p}), []string{id})
 
 	product := struct {
 		Item  *pb.Product
@@ -211,7 +217,7 @@ func (fe *frontendServer) productHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := templates.ExecuteTemplate(w, "product", injectCommonTemplateData(r, map[string]interface{}{
-		"ad":              fe.chooseAd(r.Context(), p.Categories, log),
+		"ad":              fe.chooseAd(r, p.Categories, log),
 		"show_currency":   true,
 		"currencies":      currencies,
 		"product":         product,
@@ -317,6 +323,16 @@ func (fe *frontendServer) viewCartHandler(w http.ResponseWriter, r *http.Request
 	}
 	totalPrice = money.Must(money.Sum(totalPrice, *shippingCost))
 	year := time.Now().Year()
+
+	cartProducts := make([]*pb.Product, len(items))
+	for i, item := range items {
+		cartProducts[i] = item.Item
+	}
+	catalog, err := fe.getProducts(r.Context())
+	if err != nil {
+		log.WithField("error", err).Warn("failed to get products for pet recommendations")
+	}
+	recommendations = petRecommendations(recommendations, catalog, recommendationPetTypes(r, cartProducts), cartIDs(cart))
 
 	if err := templates.ExecuteTemplate(w, "cart", injectCommonTemplateData(r, map[string]interface{}{
 		"currencies":       currencies,
@@ -539,13 +555,21 @@ func (fe *frontendServer) setCurrencyHandler(w http.ResponseWriter, r *http.Requ
 
 // chooseAd queries for advertisements available and randomly chooses one, if
 // available. It ignores the error retrieving the ad since it is not critical.
-func (fe *frontendServer) chooseAd(ctx context.Context, ctxKeys []string, log logrus.FieldLogger) *pb.Ad {
-	ads, err := fe.getAd(ctx, ctxKeys)
+func (fe *frontendServer) chooseAd(r *http.Request, ctxKeys []string, log logrus.FieldLogger) *pb.Ad {
+	catalog, err := fe.getProducts(r.Context())
 	if err != nil {
-		log.WithField("error", err).Warn("failed to retrieve ads")
+		log.WithField("error", err).Warn("failed to retrieve products for ads")
 		return nil
 	}
-	return ads[rand.Intn(len(ads))]
+	ads, err := fe.getAd(r.Context(), ctxKeys)
+	if err != nil {
+		log.WithField("error", err).Warn("failed to retrieve ads")
+	}
+	if valid := catalogAds(ads, catalog); len(valid) > 0 {
+		return valid[rand.Intn(len(valid))]
+	}
+	petType, petAge, petSize := getPetProfile(r)
+	return petAd(catalog, petType, petAge, petSize)
 }
 
 func renderHTTPError(log logrus.FieldLogger, r *http.Request, w http.ResponseWriter, err error, code int) {
