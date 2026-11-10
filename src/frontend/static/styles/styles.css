@@ -676,28 +676,238 @@ the rules below could be extracted.
   height: 5px;
 }
 
-header .h-controls .profile-link {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-
-    padding: 0 22px;
-    min-height: 64px;
-    box-sizing: border-box;
-
-    border: 1px solid #b8b8b8;
-    border-radius: 12px;
-
-    background-color: #fff;
-    color: #252525;
-
-    font-size: 16px;
-    font-weight: 500;
-    text-decoration: none;
-
-    transition: background-color 0.2s ease;
+/* Perfil de mascota: etiquetas, barra de filtro activo y "Ideal for" */
+.pet-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
 }
 
-header .h-controls .profile-link:hover {
-    background-color: #f7f7f7;
+.pet-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 1px solid #b4b2bb;
+  border-radius: 12px;
+  background-color: #F9F9F9;
+  color: #605f64;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.pet-profile-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0 20px;
+  padding: 10px 16px;
+  border-left: 4px solid #853B5C;
+  border-radius: 4px;
+  background-color: #F9F9F9;
+  color: #111111;
+}
+
+.pet-profile-bar form {
+  margin: 0;
+}
+
+.pet-profile-clear {
+  padding: 0;
+  color: #853B5C;
+  font-weight: 700;
+}
+
+.product-pet-fit {
+  margin: 16px 0 24px;
+}
+
+.product-pet-fit h3 {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.product-pet-fit p {
+  margin: 4px 0;
+  font-size: 14px;
+  color: #605f64;
+}
+
+/* Pago: errores y aviso de tarjeta de prueba */
+.checkout-errors {
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  border-left: 4px solid #CE0631;
+  border-radius: 4px;
+  background-color: #fdecef;
+  color: #7b031d;
+}
+
+.checkout-errors ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.checkout-test-card-note {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #605f64;
+}
+
+/* Historial de pedidos */
+.orders-subtitle {
+  color: #605f64;
+}
+
+.order-card {
+  display: block;
+  margin-bottom: 16px;
+  padding: 16px 20px;
+  border: 1px solid #b4b2bb;
+  border-radius: 12px;
+  color: #111111;
+  text-decoration: none;
+  transition: background-color 0.2s ease;
+}
+
+.order-card:hover {
+  background-color: #F9F9F9;
+  color: #111111;
+  text-decoration: none;
+}
+
+.order-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.order-card-id {
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.order-card-date {
+  font-size: 13px;
+  color: #605f64;
+}
+
+.order-card-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 10px 0 6px;
+  font-size: 14px;
+}
+
+.order-status {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #fff;
+  background-color: #605f64;
+}
+
+.order-status-Preparing {
+  background-color: #b4b2bb;
+  color: #111111;
+}
+
+.order-status-Shipped {
+  background-color: #853B5C;
+}
+
+.order-status-Delivered {
+  background-color: #1e7e34;
+}
+
+.order-timeline {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 24px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.order-timeline li {
+  position: relative;
+  flex: 1 1 140px;
+  padding: 16px 12px 0 0;
+  border-top: 4px solid #b4b2bb;
+  color: #605f64;
+}
+
+.order-timeline li.done {
+  border-top-color: #853B5C;
+  color: #111111;
+}
+
+.order-timeline li.current .order-timeline-label::after {
+  content: " ●";
+  color: #853B5C;
+}
+
+.order-timeline-label {
+  font-weight: 700;
+}
+
+.order-timeline-description,
+.order-timeline-time {
+  font-size: 13px;
+}
+
+.order-detail-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #F9F9F9;
+}
+
+.order-detail-item img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.order-detail-item span {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.order-detail-row {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 8px;
+}
+
+.order-detail-total {
+  font-weight: 700;
+}
+
+.order-complete-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* Botón "Home" del encabezado: se ve como los enlaces Profile y Orders */
+header .home-link-form {
+  display: flex;
+  margin: 0;
+}
+
+header .home-link {
+  padding: 0;
+  border: 0;
+  font-size: inherit;
+  line-height: inherit;
 }

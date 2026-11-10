@@ -153,7 +153,19 @@
 
           <div class="col-12">
             {{ if $.pet_type }}
-              <h3>Products for your {{ $.pet_type }}</h3>
+              <h3>Products for your {{ $.pet_type }} {{ petEmoji $.pet_type }}</h3>
+              <div class="pet-profile-bar">
+                <span>
+                  Showing products for
+                  <strong>{{ petLabel $.pet_type }}</strong>
+                  {{ with $.pet_age }} · {{ petLabel . }}{{ end }}
+                  {{ with $.pet_size }} · {{ petLabel . }}{{ end }}
+                </span>
+                <!-- Un perfil vacío borra el filtro -->
+                <form method="POST" action="{{ $.baseUrl }}/setPetProfile">
+                  <button type="submit" class="btn btn-link pet-profile-clear">Clear filter</button>
+                </form>
+              </div>
             {{ else }}
               <h3>Hot Products</h3>
             {{ end }}
@@ -168,6 +180,9 @@
 
             <div>
               <div class="hot-product-card-name">{{ .Item.Name }}</div>
+              <div class="pet-tags">
+                {{ range .Item.PetTypes }}<span class="pet-tag">{{ petEmoji . }} {{ petLabel . }}</span>{{ end }}
+              </div>
               <div class="hot-product-card-price">
                 {{ renderMoney .Price }}
               </div>
@@ -201,90 +216,7 @@
   {{ template "footer" . }}
 </div>
 
-<script>
-function updatePetOptions() {
-  const petType = document.getElementById("pet_type").value;
-  const ageSelect = document.getElementById("pet_age");
-  const sizeSelect = document.getElementById("pet_size");
-
-  const currentAge = ageSelect.value;
-  const currentSize = sizeSelect.value;
-
-  // Clear age options
-  ageSelect.innerHTML = '<option value="">Select age</option>';
-
-  // Clear size options
-  sizeSelect.innerHTML = '<option value="">Select size</option>';
-
-  let ages = [];
-  let sizes = [];
-
-  if (petType === "dog") {
-    ages = [
-      ["puppy", "Puppy"],
-      ["adult", "Adult"],
-      ["senior", "Senior"]
-    ];
-
-    sizes = [
-      ["small", "Small"],
-      ["medium", "Medium"],
-      ["large", "Large"]
-    ];
-  }
-
-  if (petType === "cat") {
-    ages = [
-      ["kitten", "Kitten"],
-      ["adult", "Adult"],
-      ["senior", "Senior"]
-    ];
-
-    sizes = [
-      ["small", "Small"],
-      ["medium", "Medium"]
-    ];
-  }
-
-  if (petType === "mouse") {
-    ages = [
-      ["young", "Young"],
-      ["adult", "Adult"]
-    ];
-
-    sizes = [
-      ["small", "Small"]
-    ];
-  }
-
-  ages.forEach(function(age) {
-    const option = document.createElement("option");
-    option.value = age[0];
-    option.textContent = age[1];
-
-    if (age[0] === currentAge) {
-      option.selected = true;
-    }
-
-    ageSelect.appendChild(option);
-  });
-
-  sizes.forEach(function(size) {
-    const option = document.createElement("option");
-    option.value = size[0];
-    option.textContent = size[1];
-
-    if (size[0] === currentSize) {
-      option.selected = true;
-    }
-
-    sizeSelect.appendChild(option);
-  });
-}
-
-document.addEventListener("DOMContentLoaded", function() {
-  updatePetOptions();
-});
-</script>
+<script>window.PET_OPTIONS = {{ $.pet_options }};</script>
+<script src="{{ $.baseUrl }}/static/js/pet-profile.js"></script>
 
 {{ end }}

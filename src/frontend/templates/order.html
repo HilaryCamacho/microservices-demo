@@ -62,8 +62,11 @@
                 </div>
             </div>
             <div class="row">
-                <div class="col-12 text-center">
-                    <a class="cymbal-button-primary" href="{{ $.baseUrl }}/" role="button">
+                <div class="col-12 text-center order-complete-actions">
+                    <a class="cymbal-button-primary" href="{{ $.baseUrl }}/orders/{{ .order.OrderId }}" role="button">
+                        Track My Order
+                    </a>
+                    <a class="cymbal-button-secondary" href="{{ $.baseUrl }}/" role="button">
                         Continue Shopping
                     </a>
                 </div>
