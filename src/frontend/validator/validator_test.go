@@ -183,3 +183,25 @@ func TestSetCurrencyFailsValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckoutErrorMessages(t *testing.T) {
+	payload := PlaceOrderPayload{
+		Email:         "no-es-correo",
+		StreetAddress: "Av. Siempre Viva 742",
+		ZipCode:       64000,
+		City:          "Monterrey",
+		State:         "NL",
+		Country:       "Mexico",
+		CcNumber:      "1234",
+		CcMonth:       5,
+		CcYear:        2030,
+		CcCVV:         123,
+	}
+	msgs := CheckoutErrorMessages(payload.Validate())
+	if len(msgs) != 2 {
+		t.Fatalf("se esperaban 2 mensajes (correo y tarjeta), llegaron %d: %v", len(msgs), msgs)
+	}
+	if msgs[0] != checkoutFieldMessages["Email"] || msgs[1] != checkoutFieldMessages["CcNumber"] {
+		t.Errorf("mensajes inesperados: %v", msgs)
+	}
+}
