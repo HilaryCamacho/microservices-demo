@@ -228,3 +228,34 @@ func TestPetTemplatesRender(t *testing.T) {
 		}
 	}
 }
+
+// El botón "Home" del encabezado envía un perfil vacío: debe borrar el filtro y volver al inicio.
+func TestHomeButtonClearsPetProfile(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/setPetProfile", strings.NewReader(""))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: cookiePetType, Value: "dog"})
+	rec := httptest.NewRecorder()
+
+	(&frontendServer{}).setPetProfileHandler(rec, req)
+
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != baseUrl+"/" {
+		t.Fatalf("debería redirigir al inicio, respondió %d hacia %q", rec.Code, rec.Header().Get("Location"))
+	}
+	cleared := 0
+	for _, c := range rec.Result().Cookies() {
+		if (c.Name == cookiePetType || c.Name == cookiePetAge || c.Name == cookiePetSize) && c.Value == "" {
+			cleared++
+		}
+	}
+	if cleared != 3 {
+		t.Errorf("deberían limpiarse las 3 cookies del perfil, se limpiaron %d", cleared)
+	}
+
+	var home bytes.Buffer
+	if err := templates.ExecuteTemplate(&home, "header", injectCommonTemplateData(httptest.NewRequest(http.MethodGet, "/", nil), map[string]interface{}{})); err != nil {
+		t.Fatalf("no se pudo renderizar el encabezado: %v", err)
+	}
+	if !strings.Contains(home.String(), `class="btn btn-link cart-link home-link"`) || !strings.Contains(home.String(), `action="/setPetProfile"`) {
+		t.Errorf("el encabezado debería tener el botón Home que limpia el perfil")
+	}
+}

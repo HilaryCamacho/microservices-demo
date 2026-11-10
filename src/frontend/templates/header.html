@@ -65,6 +65,12 @@
                     {{ end }}
                 </a>
                 <div class="controls">
+                    <!-- Vuelve al inicio con el filtro de mascota limpio (un perfil vacío lo borra) -->
+                    <form method="POST" action="{{ $.baseUrl }}/setPetProfile" class="home-link-form">
+                        <button type="submit" class="btn btn-link cart-link home-link">
+                            <span>Home</span>
+                        </button>
+                    </form>
                     <a href="{{ $.baseUrl }}/profile" class="cart-link profile-link">
                         <span>Profile</span>
                     </a>
